@@ -1,5 +1,5 @@
 /**
- * Dashboard header with navigation, user menu, tier badge, and billing.
+ * Dashboard header with navigation, user menu, tier badge, billing, and history.
  */
 
 'use client'
@@ -28,7 +28,6 @@ export default function Header() {
       const { portal_url } = await api.createPortal()
       window.location.href = portal_url
     } catch {
-      // No active subscription - go to pricing
       window.location.href = '/pricing'
     } finally {
       setBillingLoading(false)
@@ -45,6 +44,11 @@ export default function Header() {
           <Link href="/dashboard" className="text-dead-accent">
             Dashboard
           </Link>
+          {hasFeature(tier, 'hunter') && (
+            <Link href="/dashboard/history" className="text-dead-dim hover:text-dead-text transition-colors">
+              History
+            </Link>
+          )}
           <Link href="/pricing" className="text-dead-dim hover:text-dead-text transition-colors">
             Pricing
           </Link>
@@ -55,10 +59,7 @@ export default function Header() {
         {/* Tier badge */}
         <span
           className="font-mono text-xs px-2 py-1 border uppercase hidden sm:inline-block"
-          style={{
-            color: tierColors[tier],
-            borderColor: tierColors[tier],
-          }}
+          style={{ color: tierColors[tier], borderColor: tierColors[tier] }}
         >
           {tier}
         </span>
@@ -96,7 +97,6 @@ export default function Header() {
               </svg>
             </button>
 
-            {/* Dropdown menu */}
             {menuOpen && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
@@ -108,18 +108,33 @@ export default function Header() {
                     <p className="font-mono text-xs text-dead-muted truncate">
                       {session.user.email}
                     </p>
+                    <span
+                      className="inline-block font-mono text-xs px-1.5 py-0.5 border uppercase mt-1"
+                      style={{ color: tierColors[tier], borderColor: tierColors[tier], fontSize: 10 }}
+                    >
+                      {tier} tier
+                    </span>
                   </div>
                   <div className="py-1">
                     <Link
                       href="/dashboard"
-                      className="block px-4 py-2 font-mono text-sm text-dead-dim hover:text-dead-accent hover:bg-dead-bg transition-colors md:hidden"
+                      className="block px-4 py-2 font-mono text-sm text-dead-dim hover:text-dead-accent hover:bg-dead-bg transition-colors"
                       onClick={() => setMenuOpen(false)}
                     >
                       Dashboard
                     </Link>
+                    {hasFeature(tier, 'hunter') && (
+                      <Link
+                        href="/dashboard/history"
+                        className="block px-4 py-2 font-mono text-sm text-dead-dim hover:text-dead-accent hover:bg-dead-bg transition-colors"
+                        onClick={() => setMenuOpen(false)}
+                      >
+                        Scan History
+                      </Link>
+                    )}
                     <Link
                       href="/pricing"
-                      className="block px-4 py-2 font-mono text-sm text-dead-dim hover:text-dead-accent hover:bg-dead-bg transition-colors md:hidden"
+                      className="block px-4 py-2 font-mono text-sm text-dead-dim hover:text-dead-accent hover:bg-dead-bg transition-colors"
                       onClick={() => setMenuOpen(false)}
                     >
                       Pricing
@@ -129,7 +144,7 @@ export default function Header() {
                         onClick={() => { setMenuOpen(false); handleBilling() }}
                         className="block w-full text-left px-4 py-2 font-mono text-sm text-dead-dim hover:text-dead-accent hover:bg-dead-bg transition-colors"
                       >
-                        {billingLoading ? 'Loading...' : 'Billing Portal'}
+                        {billingLoading ? 'Loading...' : 'Manage Subscription'}
                       </button>
                     )}
                     {tier === 'ghost' && (
@@ -141,12 +156,14 @@ export default function Header() {
                         ↑ Upgrade Plan
                       </Link>
                     )}
-                    <button
-                      onClick={() => signOut({ callbackUrl: '/' })}
-                      className="block w-full text-left px-4 py-2 font-mono text-sm text-dead-dim hover:text-dead-danger hover:bg-dead-bg transition-colors"
-                    >
-                      Sign Out
-                    </button>
+                    <div className="border-t border-dead-border mt-1 pt-1">
+                      <button
+                        onClick={() => signOut({ callbackUrl: '/' })}
+                        className="block w-full text-left px-4 py-2 font-mono text-sm text-dead-dim hover:text-dead-danger hover:bg-dead-bg transition-colors"
+                      >
+                        Sign Out
+                      </button>
+                    </div>
                   </div>
                 </div>
               </>

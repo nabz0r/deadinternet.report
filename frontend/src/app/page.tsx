@@ -6,6 +6,7 @@
 
 import Link from 'next/link'
 import { Metadata } from 'next'
+import Footer from '@/components/layout/Footer'
 
 export const metadata: Metadata = {
   title: 'deadinternet.report | The Internet is 67% Dead',
@@ -123,7 +124,7 @@ export default function HomePage() {
                   <span className="font-mono text-dead-danger text-2xl font-bold">87%</span>
                 </div>
                 <div className="w-full bg-dead-border h-2 mb-3">
-                  <div className="h-full bg-gradient-to-r from-dead-ai to-dead-danger" style={{ width: '87%' }} />
+                  <div className="h-full bg-gradient-to-r from-dead-ai to-dead-danger transition-all duration-1000" style={{ width: '87%' }} />
                 </div>
                 <p className="font-mono text-dead-dim text-xs">
                   ▸ High AI probability. Generic transitional phrases, formulaic structure, no personal voice.
@@ -223,25 +224,7 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* Footer */}
-      <footer className="border-t border-dead-border px-4 md:px-6 py-8">
-        <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <span className="font-mono text-dead-dim text-xs">
-              © {new Date().getFullYear()} deadinternet.report
-            </span>
-            <a
-              href="https://github.com/nabz0r/deadinternet.report"
-              className="font-mono text-dead-accent text-xs hover:underline"
-            >
-              GitHub
-            </a>
-          </div>
-          <p className="font-mono text-dead-muted text-xs">
-            All statistics sourced from published research. Open source. MIT Licensed.
-          </p>
-        </div>
-      </footer>
+      <Footer />
 
       {/* JSON-LD Structured Data */}
       <script
@@ -256,26 +239,9 @@ export default function HomePage() {
             applicationCategory: 'AnalyticsApplication',
             operatingSystem: 'Web',
             offers: [
-              {
-                '@type': 'Offer',
-                name: 'Ghost (Free)',
-                price: '0',
-                priceCurrency: 'USD',
-              },
-              {
-                '@type': 'Offer',
-                name: 'Hunter',
-                price: '9',
-                priceCurrency: 'USD',
-                priceValidUntil: '2027-12-31',
-              },
-              {
-                '@type': 'Offer',
-                name: 'Operator',
-                price: '29',
-                priceCurrency: 'USD',
-                priceValidUntil: '2027-12-31',
-              },
+              { '@type': 'Offer', name: 'Ghost (Free)', price: '0', priceCurrency: 'USD' },
+              { '@type': 'Offer', name: 'Hunter', price: '9', priceCurrency: 'USD', priceValidUntil: '2027-12-31' },
+              { '@type': 'Offer', name: 'Operator', price: '29', priceCurrency: 'USD', priceValidUntil: '2027-12-31' },
             ],
           }),
         }}

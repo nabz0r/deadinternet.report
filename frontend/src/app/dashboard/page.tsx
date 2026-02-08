@@ -9,6 +9,7 @@
 import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import { useSearchParams } from 'next/navigation'
+import Link from 'next/link'
 import { api } from '@/lib/api-client'
 import { hasFeature } from '@/lib/constants'
 import DeadIndexGauge from '@/components/dashboard/DeadIndexGauge'
@@ -19,6 +20,7 @@ import LiveScanner from '@/components/dashboard/LiveScanner'
 import StatCard from '@/components/dashboard/StatCard'
 import UpgradeBanner from '@/components/dashboard/UpgradeBanner'
 import Header from '@/components/layout/Header'
+import Footer from '@/components/layout/Footer'
 
 export default function DashboardPage() {
   const { data: session, status } = useSession()
@@ -38,7 +40,6 @@ export default function DashboardPage() {
   useEffect(() => {
     if (searchParams.get('upgraded') === 'true') {
       setShowUpgradeToast(true)
-      // Clean URL
       window.history.replaceState({}, '', '/dashboard')
       setTimeout(() => setShowUpgradeToast(false), 5000)
     }
@@ -73,7 +74,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-dead-bg">
+    <div className="min-h-screen bg-dead-bg flex flex-col">
       <Header />
 
       {/* Upgrade success toast */}
@@ -85,7 +86,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <main className="max-w-7xl mx-auto px-4 py-6 space-y-6">
+      <main className="max-w-7xl mx-auto px-4 py-6 space-y-6 flex-1 w-full">
         {/* Row 1: Dead Index + Key Stats */}
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
           <div className="lg:col-span-1">
@@ -132,9 +133,35 @@ export default function DashboardPage() {
         ) : (
           <UpgradeBanner />
         )}
+
+        {/* Quick links for premium users */}
+        {hasFeature(userTier, 'hunter') && (
+          <div className="flex items-center justify-between bg-dead-surface border border-dead-border px-4 py-3">
+            <div className="flex items-center gap-4">
+              <Link
+                href="/dashboard/history"
+                className="font-mono text-xs text-dead-dim hover:text-dead-accent transition-colors"
+              >
+                📋 Scan History
+              </Link>
+              <a
+                href="/docs"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-mono text-xs text-dead-dim hover:text-dead-accent transition-colors"
+              >
+                📖 API Docs
+              </a>
+            </div>
+            <span className="font-mono text-dead-muted text-xs">
+              Last updated: {stats?.last_updated || 'loading'}
+            </span>
+          </div>
+        )}
       </main>
 
       <TickerTape facts={stats?.ticker_facts || []} />
+      <Footer />
     </div>
   )
 }

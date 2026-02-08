@@ -1,7 +1,7 @@
 /**
  * Next.js middleware - runs on edge before every request.
  *
- * Protects /dashboard from unauthenticated access.
+ * Protects /dashboard (and sub-routes) from unauthenticated access.
  * Redirects logged-in users away from /login.
  * All other routes are public.
  */
@@ -10,16 +10,12 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { getToken } from 'next-auth/jwt'
 
-// Routes that require authentication
 const PROTECTED_ROUTES = ['/dashboard']
-
-// Routes that authenticated users shouldn't see
 const AUTH_ROUTES = ['/login']
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  // Check if user has a valid session
   const token = await getToken({
     req: request,
     secret: process.env.NEXTAUTH_SECRET,

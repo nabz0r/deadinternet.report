@@ -11,6 +11,7 @@ import Link from 'next/link'
 import { useSession } from 'next-auth/react'
 import { TIERS, type TierName } from '@/lib/constants'
 import { api } from '@/lib/api-client'
+import Footer from '@/components/layout/Footer'
 
 export default function PricingPage() {
   const { data: session } = useSession()
@@ -49,7 +50,7 @@ export default function PricingPage() {
   }
 
   return (
-    <main className="min-h-screen bg-dead-bg">
+    <main className="min-h-screen bg-dead-bg flex flex-col">
       <header className="border-b border-dead-border px-6 py-4 flex items-center justify-between">
         <Link href="/" className="font-mono font-bold text-dead-text">
           deadinternet<span className="text-dead-accent">.report</span>
@@ -70,7 +71,7 @@ export default function PricingPage() {
         </div>
       </header>
 
-      <section className="max-w-5xl mx-auto px-6 py-16">
+      <section className="max-w-5xl mx-auto px-6 py-16 flex-1">
         <div className="text-center mb-12">
           <p className="font-mono text-dead-accent text-sm tracking-widest uppercase mb-4">
             [ ACCESS LEVELS ]
@@ -127,12 +128,12 @@ export default function PricingPage() {
                   </p>
                   {tier.price > 0 && (
                     <p className="font-mono text-dead-muted text-xs mb-4">
-                      Cancel anytime
+                      Cancel anytime • Billed monthly
                     </p>
                   )}
                   {tier.price === 0 && (
                     <p className="font-mono text-dead-muted text-xs mb-4">
-                      Free forever
+                      Free forever • No credit card
                     </p>
                   )}
                 </div>
@@ -202,29 +203,29 @@ export default function PricingPage() {
               <h4 className="font-mono text-sm text-dead-text mb-2">Can I cancel my subscription?</h4>
               <p className="font-mono text-dead-dim text-xs">
                 Yes, you can cancel anytime from your billing portal. Your premium access
-                continues until the end of your current billing period.
+                continues until the end of your current billing period. No questions asked.
               </p>
             </div>
             <div className="border-b border-dead-border pb-4">
               <h4 className="font-mono text-sm text-dead-text mb-2">What is the API access (Operator tier)?</h4>
               <p className="font-mono text-dead-dim text-xs">
-                Operator tier gives you a JWT token for direct API access. You can integrate
+                Operator tier gives you direct API access via JWT token. Integrate
                 the scanner into your own tools, CI/CD pipelines, or content moderation workflows.
-                Full API docs at /docs.
+                Full API docs at <a href="/docs" className="text-dead-accent hover:underline">/docs</a>.
+              </p>
+            </div>
+            <div className="border-b border-dead-border pb-4">
+              <h4 className="font-mono text-sm text-dead-text mb-2">Is my data private?</h4>
+              <p className="font-mono text-dead-dim text-xs">
+                Yes. We don&apos;t sell data, don&apos;t run ads, and don&apos;t track you.
+                Scan URLs are stored for your history only. See our <Link href="/privacy" className="text-dead-accent hover:underline">Privacy Policy</Link>.
               </p>
             </div>
           </div>
         </div>
       </section>
 
-      <footer className="border-t border-dead-border px-6 py-8 text-center">
-        <p className="font-mono text-dead-dim text-xs">
-          All data sourced from published research •
-          <a href="https://github.com/nabz0r/deadinternet.report" className="text-dead-accent hover:underline ml-1">
-            Open Source on GitHub
-          </a>
-        </p>
-      </footer>
+      <Footer />
     </main>
   )
 }
