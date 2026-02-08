@@ -1,0 +1,14 @@
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+.env
+.env.local
+.next/
+dist/
+build/
+.DS_Store
+nginx/certs/*.pem
+*.log
+.coverage
+.pytest_cache/
