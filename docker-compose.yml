@@ -1,12 +1,5 @@
 # deadinternet.report - Docker Compose
 # One command deploy: docker compose up -d
-#
-# Services:
-#   - frontend: Next.js 14 (port 3000)
-#   - backend:  FastAPI (port 8000)
-#   - db:       PostgreSQL 16 (port 5432)
-#   - redis:    Redis 7 (port 6379)
-#   - nginx:    Reverse proxy (ports 80/443)
 
 services:
   frontend:
