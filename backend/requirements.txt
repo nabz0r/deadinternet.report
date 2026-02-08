@@ -1,0 +1,26 @@
+# Web framework
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+
+# Database
+sqlalchemy[asyncio]==2.0.36
+asyncpg==0.30.0
+alembic==1.14.1
+
+# Cache & rate limiting
+redis[hiredis]==5.2.1
+
+# Auth
+python-jose[cryptography]==3.3.0
+
+# Payments
+stripe==11.4.1
+
+# AI Scanner
+anthropic==0.43.0
+httpx==0.28.1
+
+# Utils
+pydantic==2.10.4
+pydantic-settings==2.7.1
+python-dotenv==1.0.1
