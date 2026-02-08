@@ -5,6 +5,8 @@ Fetches a URL's content, sends it to Claude for analysis,
 and returns a structured AI probability assessment.
 """
 
+import re
+import json
 import time
 import httpx
 import anthropic
@@ -36,22 +38,32 @@ class ScannerService:
     """Handles URL fetching and AI analysis."""
 
     def __init__(self):
-        self.client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
-        self.http = httpx.AsyncClient(
-            timeout=15.0,
-            follow_redirects=True,
-            headers={"User-Agent": "DeadInternetReport/1.0 (content-analyzer)"},
-        )
+        self._client: anthropic.AsyncAnthropic | None = None
+        self._http: httpx.AsyncClient | None = None
+
+    @property
+    def client(self) -> anthropic.AsyncAnthropic:
+        if not self._client:
+            self._client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+        return self._client
+
+    @property
+    def http(self) -> httpx.AsyncClient:
+        if not self._http:
+            self._http = httpx.AsyncClient(
+                timeout=15.0,
+                follow_redirects=True,
+                headers={"User-Agent": "DeadInternetReport/1.0 (content-analyzer)"},
+            )
+        return self._http
 
     async def fetch_content(self, url: str) -> str:
         """Fetch and extract text content from URL."""
         response = await self.http.get(str(url))
         response.raise_for_status()
 
-        # Basic HTML text extraction (strip tags)
         text = response.text
         # Remove script/style blocks
-        import re
         text = re.sub(r'<script[^>]*>.*?</script>', '', text, flags=re.DOTALL)
         text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.DOTALL)
         text = re.sub(r'<[^>]+>', ' ', text)
@@ -64,11 +76,9 @@ class ScannerService:
         """Full scan pipeline: fetch URL -> analyze with Claude -> return result."""
         start = time.monotonic()
 
-        # Fetch content
         content = await self.fetch_content(url)
         snippet = content[:500]
 
-        # Send to Claude
         message = await self.client.messages.create(
             model=settings.scanner_model,
             max_tokens=500,
@@ -78,9 +88,10 @@ class ScannerService:
             }],
         )
 
-        # Parse response
-        import json
         raw = message.content[0].text
+        # Strip markdown backticks if Claude adds them anyway
+        raw = re.sub(r'^```json\s*', '', raw)
+        raw = re.sub(r'\s*```$', '', raw)
         result = json.loads(raw)
 
         duration_ms = int((time.monotonic() - start) * 1000)

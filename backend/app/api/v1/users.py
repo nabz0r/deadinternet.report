@@ -24,8 +24,6 @@ import stripe
 router = APIRouter()
 
 
-# --- Sync schema ---
-
 class UserSyncRequest(BaseModel):
     """Payload from NextAuth JWT callback on first login."""
     id: str
@@ -42,23 +40,19 @@ async def sync_user(
     """
     Sync user from NextAuth on login.
     Creates user if not exists, returns current tier.
-    Called by NextAuth JWT callback - no auth header needed
-    (the call comes from the server-side NextAuth process).
+    Called server-side by NextAuth JWT callback - no auth header needed.
     """
-    # Check if user exists by email
     result = await db.execute(
         select(User).where(User.email == payload.email)
     )
     user = result.scalar_one_or_none()
 
     if user:
-        # Update profile info if changed
         user.name = payload.name or user.name
         user.image = payload.image or user.image
         await db.flush()
         return {"id": user.id, "tier": user.tier, "synced": True}
 
-    # Create new user
     user = User(
         id=payload.id,
         email=payload.email,
