@@ -1,0 +1,21 @@
+{
+  "name": "deadinternet.report",
+  "short_name": "deadinternet",
+  "description": "Real-time dashboard tracking AI-generated content and bot traffic",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#ff6600",
+  "icons": [
+    {
+      "src": "/icon",
+      "sizes": "32x32",
+      "type": "image/png"
+    },
+    {
+      "src": "/apple-icon",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ]
+}
