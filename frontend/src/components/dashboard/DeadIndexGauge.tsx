@@ -1,6 +1,6 @@
 /**
  * Dead Internet Index - the big central score.
- * Animated gauge from 0-100% with color gradient.
+ * Animated SVG gauge from 0-100% with color gradient and glow.
  * This is the hero element of the dashboard.
  */
 
@@ -16,11 +16,17 @@ export default function DeadIndexGauge({ value }: Props) {
   const displayValue = useCountUp(value * 100, 2500)
   const pct = Math.round(displayValue)
 
-  // Color interpolation: green (0%) -> amber (50%) -> red (100%)
   const getColor = (v: number) => {
     if (v < 30) return '#00cc66'
     if (v < 60) return '#ffaa00'
     return '#ff4444'
+  }
+
+  const getLabel = (v: number) => {
+    if (v > 70) return 'CRITICAL'
+    if (v > 50) return 'SEVERE'
+    if (v > 30) return 'WARNING'
+    return 'MODERATE'
   }
 
   const color = getColor(pct)
@@ -28,7 +34,7 @@ export default function DeadIndexGauge({ value }: Props) {
   const offset = circumference - (displayValue / 100) * circumference
 
   return (
-    <div className="bg-dead-surface border border-dead-border p-6 flex flex-col items-center justify-center h-full">
+    <div className="bg-dead-surface border border-dead-border p-6 flex flex-col items-center justify-center h-full animate-fade-in">
       <p className="font-mono text-dead-dim text-xs uppercase tracking-wider mb-4">
         Dead Internet Index
       </p>
@@ -42,6 +48,16 @@ export default function DeadIndexGauge({ value }: Props) {
             stroke="#1a1a1a"
             strokeWidth="8"
           />
+          {/* Glow filter */}
+          <defs>
+            <filter id="glow">
+              <feGaussianBlur stdDeviation="3" result="coloredBlur" />
+              <feMerge>
+                <feMergeNode in="coloredBlur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
           {/* Progress arc */}
           <circle
             cx="80" cy="80" r="70"
@@ -51,18 +67,19 @@ export default function DeadIndexGauge({ value }: Props) {
             strokeLinecap="round"
             strokeDasharray={circumference}
             strokeDashoffset={offset}
+            filter="url(#glow)"
             style={{ transition: 'stroke-dashoffset 0.1s ease' }}
           />
         </svg>
-        <div className="absolute inset-0 flex items-center justify-center">
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
           <span className="font-mono text-4xl font-bold" style={{ color }}>
             {pct}%
           </span>
         </div>
       </div>
 
-      <p className="font-mono text-dead-dim text-xs mt-4">
-        {pct > 60 ? 'CRITICAL' : pct > 40 ? 'WARNING' : 'MODERATE'}
+      <p className="font-mono text-xs mt-4 font-bold tracking-widest" style={{ color }}>
+        {getLabel(pct)}
       </p>
     </div>
   )

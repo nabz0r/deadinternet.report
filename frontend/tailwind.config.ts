@@ -5,7 +5,6 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Bloomberg-terminal inspired palette
         dead: {
           bg: '#0a0a0a',
           surface: '#111111',
@@ -13,12 +12,12 @@ const config: Config = {
           muted: '#333333',
           text: '#e0e0e0',
           dim: '#666666',
-          accent: '#ff6600',    // Warning orange
-          danger: '#ff2222',    // Alert red
-          safe: '#00cc66',      // Human green
-          bot: '#ff4444',       // Bot red
-          ai: '#ffaa00',        // AI amber
-          glow: '#ff660033',    // Accent glow
+          accent: '#ff6600',
+          danger: '#ff2222',
+          safe: '#00cc66',
+          bot: '#ff4444',
+          ai: '#ffaa00',
+          glow: '#ff660033',
         },
       },
       fontFamily: {
@@ -28,16 +27,26 @@ const config: Config = {
       animation: {
         'pulse-slow': 'pulse 3s ease-in-out infinite',
         'ticker': 'ticker 30s linear infinite',
+        'ticker-seamless': 'ticker-scroll 40s linear infinite',
         'glow': 'glow 2s ease-in-out infinite alternate',
+        'fade-in': 'fadeIn 0.5s ease-out forwards',
       },
       keyframes: {
         ticker: {
           '0%': { transform: 'translateX(100%)' },
           '100%': { transform: 'translateX(-100%)' },
         },
+        'ticker-scroll': {
+          '0%': { transform: 'translateX(0)' },
+          '100%': { transform: 'translateX(-50%)' },
+        },
         glow: {
           '0%': { boxShadow: '0 0 5px #ff660033' },
           '100%': { boxShadow: '0 0 20px #ff660066' },
+        },
+        fadeIn: {
+          '0%': { opacity: '0', transform: 'translateY(8px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
         },
       },
     },
