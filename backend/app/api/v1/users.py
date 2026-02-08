@@ -2,12 +2,15 @@
 User endpoints - profile and subscription management.
 
 GET  /api/v1/users/me         -> Current user profile
+POST /api/v1/users/sync       -> Sync user from NextAuth (called on login)
 POST /api/v1/users/checkout   -> Create Stripe checkout session
 POST /api/v1/users/portal     -> Create Stripe billing portal
 """
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.core.database import get_db
 from app.core.security import require_auth
@@ -19,6 +22,53 @@ from app.schemas.user import UserProfile
 import stripe
 
 router = APIRouter()
+
+
+# --- Sync schema ---
+
+class UserSyncRequest(BaseModel):
+    """Payload from NextAuth JWT callback on first login."""
+    id: str
+    email: str
+    name: str | None = None
+    image: str | None = None
+
+
+@router.post("/sync")
+async def sync_user(
+    payload: UserSyncRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Sync user from NextAuth on login.
+    Creates user if not exists, returns current tier.
+    Called by NextAuth JWT callback - no auth header needed
+    (the call comes from the server-side NextAuth process).
+    """
+    # Check if user exists by email
+    result = await db.execute(
+        select(User).where(User.email == payload.email)
+    )
+    user = result.scalar_one_or_none()
+
+    if user:
+        # Update profile info if changed
+        user.name = payload.name or user.name
+        user.image = payload.image or user.image
+        await db.flush()
+        return {"id": user.id, "tier": user.tier, "synced": True}
+
+    # Create new user
+    user = User(
+        id=payload.id,
+        email=payload.email,
+        name=payload.name,
+        image=payload.image,
+        tier="ghost",
+    )
+    db.add(user)
+    await db.flush()
+    return {"id": user.id, "tier": "ghost", "synced": True, "created": True}
 
 
 @router.get("/me", response_model=UserProfile)
