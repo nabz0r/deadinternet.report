@@ -3,13 +3,14 @@ Application settings loaded from environment variables.
 All config is centralized here - no magic strings elsewhere.
 """
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 from typing import List
 
 
 class Settings(BaseSettings):
     # General
-    debug: bool = True  # Default true for dev, set False in prod
+    debug: bool = True
     api_version: str = "v1"
 
     # Database
@@ -22,8 +23,15 @@ class Settings(BaseSettings):
     jwt_secret: str = "change-me"
     jwt_algorithm: str = "HS256"
 
-    # CORS
+    # CORS - accepts comma-separated string or JSON array
     cors_origins: List[str] = ["http://localhost:3000", "https://deadinternet.report"]
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, v):
+        if isinstance(v, str):
+            return [s.strip() for s in v.split(",") if s.strip()]
+        return v
 
     # Anthropic
     anthropic_api_key: str = ""

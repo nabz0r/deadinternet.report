@@ -8,6 +8,7 @@
 
 import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
+import { redirect } from 'next/navigation'
 import { api } from '@/lib/api-client'
 import { hasFeature } from '@/lib/constants'
 import DeadIndexGauge from '@/components/dashboard/DeadIndexGauge'
@@ -19,7 +20,7 @@ import StatCard from '@/components/dashboard/StatCard'
 import Header from '@/components/layout/Header'
 
 export default function DashboardPage() {
-  const { data: session } = useSession()
+  const { data: session, status } = useSession()
   const [stats, setStats] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
@@ -30,7 +31,18 @@ export default function DashboardPage() {
       .finally(() => setLoading(false))
   }, [])
 
-  const userTier = (session?.user as any)?.tier || 'ghost'
+  // Auth loading state
+  if (status === 'loading') {
+    return (
+      <div className="min-h-screen bg-dead-bg flex items-center justify-center">
+        <div className="font-mono text-dead-accent animate-pulse text-lg">
+          [ AUTHENTICATING... ]
+        </div>
+      </div>
+    )
+  }
+
+  const userTier = session?.user?.tier || 'ghost'
 
   if (loading) {
     return (

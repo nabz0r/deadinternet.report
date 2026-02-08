@@ -2,8 +2,13 @@
 const nextConfig = {
   output: 'standalone',
   images: {
-    domains: ['avatars.githubusercontent.com', 'lh3.googleusercontent.com'],
+    domains: [
+      'lh3.googleusercontent.com',
+      'avatars.githubusercontent.com',
+    ],
   },
+  // Suppress React hydration warnings from browser extensions
+  reactStrictMode: true,
 }
 
 module.exports = nextConfig
