@@ -13,6 +13,7 @@
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "next-auth": "^4.24.0",
+    "jose": "^5.2.0",
     "recharts": "^2.13.0",
     "stripe": "^17.0.0",
     "@stripe/stripe-js": "^4.0.0",

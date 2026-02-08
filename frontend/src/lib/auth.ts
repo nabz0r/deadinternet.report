@@ -1,24 +1,31 @@
 /**
  * NextAuth.js configuration.
- * Providers: Google, GitHub, Email magic link.
- * Session strategy: JWT (stateless, no DB session table needed).
+ * Providers: Google, GitHub.
+ * Session strategy: JWT (stateless).
+ *
+ * On first sign-in, syncs user to backend via /users/sync.
+ * JWT callback stores tier from backend.
+ * Session callback exposes tier and id to client.
  */
 
 import type { NextAuthOptions } from 'next-auth'
 import GoogleProvider from 'next-auth/providers/google'
 import GitHubProvider from 'next-auth/providers/github'
 
+const BACKEND_URL = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://backend:8000'
+
 export const authOptions: NextAuthOptions = {
   providers: [
     GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      clientId: process.env.GOOGLE_CLIENT_ID || '',
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
     }),
     GitHubProvider({
-      clientId: process.env.GITHUB_CLIENT_ID!,
-      clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+      clientId: process.env.GITHUB_CLIENT_ID || '',
+      clientSecret: process.env.GITHUB_CLIENT_SECRET || '',
     }),
   ],
+  secret: process.env.NEXTAUTH_SECRET,
   session: {
     strategy: 'jwt',
     maxAge: 30 * 24 * 60 * 60, // 30 days
@@ -27,13 +34,13 @@ export const authOptions: NextAuthOptions = {
     async jwt({ token, user, account }) {
       // On first sign-in, sync user to backend
       if (user && account) {
-        token.tier = 'ghost' // Default tier
+        token.tier = 'ghost'
         try {
-          const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/users/sync`, {
+          const res = await fetch(`${BACKEND_URL}/api/v1/users/sync`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              id: user.id,
+              id: user.id || token.sub,
               email: user.email,
               name: user.name,
               image: user.image,
@@ -44,15 +51,15 @@ export const authOptions: NextAuthOptions = {
             token.tier = data.tier || 'ghost'
           }
         } catch {
-          // Backend might not be ready yet, continue with ghost tier
+          // Backend might not be ready, continue with ghost
         }
       }
       return token
     },
     async session({ session, token }) {
       if (session.user) {
-        (session.user as any).id = token.sub
-        ;(session.user as any).tier = token.tier || 'ghost'
+        session.user.id = token.sub || ''
+        session.user.tier = (token.tier as string) || 'ghost'
       }
       return session
     },
