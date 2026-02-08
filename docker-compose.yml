@@ -1,6 +1,3 @@
-# deadinternet.report - Docker Compose
-# One command deploy: docker compose up -d
-
 services:
   frontend:
     build:
