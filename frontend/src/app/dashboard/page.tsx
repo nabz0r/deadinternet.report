@@ -1,14 +1,14 @@
 /**
  * Dashboard page - main authenticated view.
- * Shows Dead Internet Index, platform stats, timeline, and scanner.
- * Fetches data from the backend API on load.
+ * Shows Dead Internet Index, platform stats, timeline, scanner.
+ * Fetches data from backend API. Shows upgrade CTA for ghost tier.
  */
 
 'use client'
 
 import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
-import { redirect } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import { api } from '@/lib/api-client'
 import { hasFeature } from '@/lib/constants'
 import DeadIndexGauge from '@/components/dashboard/DeadIndexGauge'
@@ -17,12 +17,15 @@ import TimelineChart from '@/components/dashboard/TimelineChart'
 import TickerTape from '@/components/dashboard/TickerTape'
 import LiveScanner from '@/components/dashboard/LiveScanner'
 import StatCard from '@/components/dashboard/StatCard'
+import UpgradeBanner from '@/components/dashboard/UpgradeBanner'
 import Header from '@/components/layout/Header'
 
 export default function DashboardPage() {
   const { data: session, status } = useSession()
+  const searchParams = useSearchParams()
   const [stats, setStats] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+  const [showUpgradeToast, setShowUpgradeToast] = useState(false)
 
   useEffect(() => {
     api.getStats()
@@ -31,7 +34,16 @@ export default function DashboardPage() {
       .finally(() => setLoading(false))
   }, [])
 
-  // Auth loading state
+  // Show success toast after Stripe redirect
+  useEffect(() => {
+    if (searchParams.get('upgraded') === 'true') {
+      setShowUpgradeToast(true)
+      // Clean URL
+      window.history.replaceState({}, '', '/dashboard')
+      setTimeout(() => setShowUpgradeToast(false), 5000)
+    }
+  }, [searchParams])
+
   if (status === 'loading') {
     return (
       <div className="min-h-screen bg-dead-bg flex items-center justify-center">
@@ -46,9 +58,15 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-dead-bg flex items-center justify-center">
-        <div className="font-mono text-dead-accent animate-pulse text-lg">
-          [ LOADING DEAD INTERNET DATA... ]
+      <div className="min-h-screen bg-dead-bg">
+        <Header />
+        <div className="flex items-center justify-center" style={{ minHeight: 'calc(100vh - 60px)' }}>
+          <div className="text-center">
+            <div className="inline-block w-8 h-8 border-2 border-dead-accent border-t-transparent rounded-full animate-spin mb-4" />
+            <p className="font-mono text-dead-accent text-sm animate-pulse">
+              [ LOADING DEAD INTERNET DATA... ]
+            </p>
+          </div>
         </div>
       </div>
     )
@@ -58,13 +76,22 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-dead-bg">
       <Header />
 
+      {/* Upgrade success toast */}
+      {showUpgradeToast && (
+        <div className="bg-dead-safe/10 border-b border-dead-safe px-6 py-3 text-center">
+          <p className="font-mono text-dead-safe text-sm">
+            ✓ Upgrade successful! Your scanner is now active.
+          </p>
+        </div>
+      )}
+
       <main className="max-w-7xl mx-auto px-4 py-6 space-y-6">
         {/* Row 1: Dead Index + Key Stats */}
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
           <div className="lg:col-span-1">
             <DeadIndexGauge value={stats?.dead_internet_index || 0} />
           </div>
-          <div className="lg:col-span-3 grid grid-cols-3 gap-4">
+          <div className="lg:col-span-3 grid grid-cols-1 sm:grid-cols-3 gap-4">
             <StatCard
               label="Bot Traffic"
               value={stats?.global?.bot_traffic_pct || 0}
@@ -99,18 +126,11 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Row 3: Scanner (premium) */}
+        {/* Row 3: Scanner (premium) or Upgrade CTA */}
         {hasFeature(userTier, 'hunter') ? (
           <LiveScanner />
         ) : (
-          <div className="bg-dead-surface border border-dead-border p-8 text-center">
-            <p className="font-mono text-dead-dim mb-2">
-              [ SCANNER LOCKED ]
-            </p>
-            <p className="font-mono text-dead-accent">
-              Upgrade to Hunter ($9/mo) to scan URLs with Claude AI
-            </p>
-          </div>
+          <UpgradeBanner />
         )}
       </main>
 
