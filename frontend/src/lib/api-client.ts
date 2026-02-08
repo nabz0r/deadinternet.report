@@ -1,102 +1,100 @@
 /**
  * API client for backend communication.
- * Handles auth headers, error parsing, and base URL config.
+ *
+ * Public endpoints (stats) -> call backend directly.
+ * Authenticated endpoints (scanner, users) -> proxy via /api/backend/
+ * to keep JWT tokens server-side only.
  */
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-
-interface FetchOptions extends RequestInit {
-  token?: string
-}
+const PROXY_BASE = '/api/backend'  // Next.js API route that proxies to backend
 
 class ApiClient {
   private baseUrl: string
+  private proxyUrl: string
 
-  constructor(baseUrl: string) {
+  constructor(baseUrl: string, proxyUrl: string) {
     this.baseUrl = baseUrl
+    this.proxyUrl = proxyUrl
   }
 
-  private async request<T>(path: string, options: FetchOptions = {}): Promise<T> {
-    const { token, ...fetchOptions } = options
-
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      ...((options.headers as Record<string, string>) || {}),
-    }
-
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`
-    }
-
-    const response = await fetch(`${this.baseUrl}${path}`, {
-      ...fetchOptions,
-      headers,
-    })
-
+  /** Direct call to backend (public, no auth) */
+  private async publicRequest<T>(path: string): Promise<T> {
+    const response = await fetch(`${this.baseUrl}${path}`)
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: 'Request failed' }))
       throw new Error(error.detail || `HTTP ${response.status}`)
     }
-
     return response.json()
   }
 
-  // --- Stats (public) ---
+  /** Proxied call via Next.js (auth, JWT handled server-side) */
+  private async authRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
+    const response = await fetch(`${this.proxyUrl}${path}`, {
+      headers: { 'Content-Type': 'application/json' },
+      ...options,
+    })
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Request failed' }))
+      throw new Error(error.detail || `HTTP ${response.status}`)
+    }
+    return response.json()
+  }
+
+  // --- Stats (public, direct) ---
   async getStats() {
-    return this.request<any>('/api/v1/stats/')
+    return this.publicRequest<any>('/api/v1/stats/')
   }
 
   async getPlatforms() {
-    return this.request<any>('/api/v1/stats/platforms')
+    return this.publicRequest<any>('/api/v1/stats/platforms')
   }
 
   async getTimeline() {
-    return this.request<any[]>('/api/v1/stats/timeline')
+    return this.publicRequest<any[]>('/api/v1/stats/timeline')
   }
 
   async getTicker() {
-    return this.request<string[]>('/api/v1/stats/ticker')
+    return this.publicRequest<string[]>('/api/v1/stats/ticker')
   }
 
   async getDeadIndex() {
-    return this.request<{ index: number; last_updated: string }>('/api/v1/stats/index')
+    return this.publicRequest<{ index: number; last_updated: string }>('/api/v1/stats/index')
   }
 
-  // --- Scanner (auth required) ---
-  async scanUrl(url: string, token: string) {
-    return this.request<any>('/api/v1/scanner/scan', {
+  // --- Scanner (auth, proxied) ---
+  async scanUrl(url: string) {
+    return this.authRequest<any>('/scanner/scan', {
       method: 'POST',
       body: JSON.stringify({ url }),
-      token,
     })
   }
 
-  async getScanUsage(token: string) {
-    return this.request<any>('/api/v1/scanner/usage', { token })
+  async getScanUsage() {
+    return this.authRequest<any>('/scanner/usage')
   }
 
-  async getScanHistory(token: string, limit = 20, offset = 0) {
-    return this.request<any>(`/api/v1/scanner/history?limit=${limit}&offset=${offset}`, { token })
+  async getScanHistory(limit = 20, offset = 0) {
+    return this.authRequest<any>(`/scanner/history?limit=${limit}&offset=${offset}`)
   }
 
-  // --- User ---
-  async getProfile(token: string) {
-    return this.request<any>('/api/v1/users/me', { token })
+  // --- User (auth, proxied) ---
+  async getProfile() {
+    return this.authRequest<any>('/users/me')
   }
 
-  async createCheckout(priceId: string, token: string) {
-    return this.request<{ checkout_url: string }>(
-      `/api/v1/users/checkout?price_id=${priceId}`,
-      { method: 'POST', token }
+  async createCheckout(priceId: string) {
+    return this.authRequest<{ checkout_url: string }>(
+      `/users/checkout?price_id=${priceId}`,
+      { method: 'POST' }
     )
   }
 
-  async createPortal(token: string) {
-    return this.request<{ portal_url: string }>('/api/v1/users/portal', {
+  async createPortal() {
+    return this.authRequest<{ portal_url: string }>('/users/portal', {
       method: 'POST',
-      token,
     })
   }
 }
 
-export const api = new ApiClient(API_BASE)
+export const api = new ApiClient(API_BASE, PROXY_BASE)

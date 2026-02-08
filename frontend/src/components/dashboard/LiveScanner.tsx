@@ -1,18 +1,16 @@
 /**
  * Live Scanner - URL AI content analyzer.
  * Premium feature (Hunter+). Sends URL to backend -> Claude API.
- * Shows result with animated probability gauge.
+ * Uses Next.js API proxy for auth (no token handling client-side).
  */
 
 'use client'
 
 import { useState } from 'react'
-import { useSession } from 'next-auth/react'
 import { api } from '@/lib/api-client'
 import { getVerdictColor, getVerdictLabel } from '@/lib/utils'
 
 export default function LiveScanner() {
-  const { data: session } = useSession()
   const [url, setUrl] = useState('')
   const [scanning, setScanning] = useState(false)
   const [result, setResult] = useState<any>(null)
@@ -25,9 +23,7 @@ export default function LiveScanner() {
     setResult(null)
 
     try {
-      // TODO: get actual JWT token from session
-      const token = '' // Will be wired up with NextAuth JWT
-      const data = await api.scanUrl(url, token)
+      const data = await api.scanUrl(url)
       setResult(data.result)
     } catch (err: any) {
       setError(err.message || 'Scan failed')
@@ -99,7 +95,7 @@ export default function LiveScanner() {
               className="h-full rounded-full transition-all duration-1000"
               style={{
                 width: `${result.ai_probability * 100}%`,
-                background: `linear-gradient(90deg, #00cc66, #ffaa00, #ff4444)`,
+                background: 'linear-gradient(90deg, #00cc66, #ffaa00, #ff4444)',
               }}
             />
           </div>
