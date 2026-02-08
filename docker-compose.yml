@@ -3,11 +3,16 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+        - NEXT_PUBLIC_STRIPE_PRICE_HUNTER=${NEXT_PUBLIC_STRIPE_PRICE_HUNTER:-}
+        - NEXT_PUBLIC_STRIPE_PRICE_OPERATOR=${NEXT_PUBLIC_STRIPE_PRICE_OPERATOR:-}
     env_file: .env
     environment:
       - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
-      - NEXT_PUBLIC_API_URL=${API_URL:-http://localhost:8000}
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+      - API_URL=http://backend:8000
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
       - GITHUB_CLIENT_ID=${GITHUB_ID}
@@ -26,12 +31,16 @@ services:
       dockerfile: Dockerfile
     env_file: .env
     environment:
+      - DEBUG=${DEBUG:-true}
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-deadinet}:${POSTGRES_PASSWORD:-deadinet}@db:5432/${POSTGRES_DB:-deadinternet}
       - REDIS_URL=redis://redis:6379/0
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
       - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
+      - STRIPE_PRICE_HUNTER=${STRIPE_PRICE_HUNTER}
+      - STRIPE_PRICE_OPERATOR=${STRIPE_PRICE_OPERATOR}
       - JWT_SECRET=${NEXTAUTH_SECRET}
+      - CORS_ORIGINS=http://localhost:3000,https://deadinternet.report,http://frontend:3000
     depends_on:
       db:
         condition: service_healthy

@@ -16,6 +16,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.database import engine, Base
 from app.core.redis import redis_client
+
+# CRITICAL: import all models so SQLAlchemy knows about them
+# for Base.metadata.create_all() to work
+import app.models  # noqa: F401
+
 from app.api.v1 import stats, scanner, users, webhooks
 
 
@@ -36,7 +41,8 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="deadinternet.report API",
     version="0.1.0",
-    docs_url="/docs" if settings.debug else None,
+    docs_url="/docs",  # Always available, useful for debugging
+    redoc_url="/redoc" if settings.debug else None,
     lifespan=lifespan,
 )
 

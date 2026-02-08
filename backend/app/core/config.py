@@ -9,7 +9,7 @@ from typing import List
 
 class Settings(BaseSettings):
     # General
-    debug: bool = False
+    debug: bool = True  # Default true for dev, set False in prod
     api_version: str = "v1"
 
     # Database
@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     # Redis
     redis_url: str = "redis://redis:6379/0"
 
-    # Auth
+    # Auth - MUST match NEXTAUTH_SECRET from frontend
     jwt_secret: str = "change-me"
     jwt_algorithm: str = "HS256"
 
