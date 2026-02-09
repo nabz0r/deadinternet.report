@@ -13,6 +13,7 @@ import GoogleProvider from 'next-auth/providers/google'
 import GitHubProvider from 'next-auth/providers/github'
 
 const BACKEND_URL = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://backend:8000'
+const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET || ''
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -38,7 +39,10 @@ export const authOptions: NextAuthOptions = {
         try {
           const res = await fetch(`${BACKEND_URL}/api/v1/users/sync`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Internal-Secret': INTERNAL_API_SECRET,
+            },
             body: JSON.stringify({
               id: user.id || token.sub,
               email: user.email,
