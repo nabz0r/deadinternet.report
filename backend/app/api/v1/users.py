@@ -28,7 +28,7 @@ router = APIRouter()
 class UserSyncRequest(BaseModel):
     """Payload from NextAuth JWT callback on first login."""
     id: str
-    email: EmailStr  # Validate email format
+    email: EmailStr
     name: str | None = None
     image: str | None = None
 
@@ -99,12 +99,15 @@ async def create_checkout(
     if price_id not in valid_prices:
         raise HTTPException(status_code=400, detail="Invalid price ID")
 
+    # Determine base URL from CORS origins
+    base_url = settings.cors_origins[0] if settings.cors_origins else 'https://deadinternet.report'
+
     url = await stripe_service.create_checkout_session(
         user_id=user["id"],
         email=user["email"],
         price_id=price_id,
-        success_url=f"{settings.cors_origins[0]}/dashboard?upgraded=true",
-        cancel_url=f"{settings.cors_origins[0]}/pricing",
+        success_url=f"{base_url}/dashboard/success",
+        cancel_url=f"{base_url}/pricing",
     )
     return {"checkout_url": url}
 
@@ -119,8 +122,10 @@ async def create_portal(
     if not db_user or not db_user.stripe_customer_id:
         raise HTTPException(status_code=400, detail="No active subscription")
 
+    base_url = settings.cors_origins[0] if settings.cors_origins else 'https://deadinternet.report'
+
     session = stripe.billing_portal.Session.create(
         customer=db_user.stripe_customer_id,
-        return_url=f"{settings.cors_origins[0]}/dashboard",
+        return_url=f"{base_url}/dashboard",
     )
     return {"portal_url": session.url}
