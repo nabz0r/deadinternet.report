@@ -7,6 +7,8 @@
 [![Docker](https://img.shields.io/badge/Docker-ready-blue.svg)](https://www.docker.com/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.110-009688.svg)](https://fastapi.tiangolo.com/)
 [![Next.js](https://img.shields.io/badge/Next.js-14-black.svg)](https://nextjs.org/)
+[![Security](https://img.shields.io/badge/Security_Audit-35_issues_found-red.svg)](docs/Security.md)
+[![Critical Fixes](https://img.shields.io/badge/Critical_Fixes-7%2F7_✅-brightgreen.svg)](docs/Security.md)
 
 ---
 
@@ -35,65 +37,53 @@ Premium tier includes a **live URL scanner** powered by Claude AI that estimates
 - Docker & Docker Compose v2+
 - API keys (see [Configuration](#configuration))
 
-### Deploy in 3 commands
+### Deploy in 4 commands
 
 ```bash
 git clone https://github.com/nabz0r/deadinternet.report.git
 cd deadinternet.report
 cp .env.example .env   # ← Edit with your API keys
+# Generate required secrets:
+export JWT_SECRET=$(openssl rand -hex 32)
+export INTERNAL_API_SECRET=$(openssl rand -hex 32)
+export NEXTAUTH_SECRET=$(openssl rand -base64 32)
 docker compose up -d
 ```
 
 Open `http://localhost` — you're live.
 
-### Verify it's running
-
-```bash
-# Backend health check
-curl http://localhost/health
-# → {"status":"alive","service":"deadinternet-api"}
-
-# Stats endpoint (public)
-curl http://localhost/api/v1/stats/
-# → Full dataset JSON
-
-# API docs
-open http://localhost/docs
-```
-
 ---
 
 ## Architecture
 
+Full architecture documentation with Mermaid diagrams: **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**
+
+```mermaid
+graph TB
+    Browser["🌐 Browser"] -->|HTTPS| Nginx["Nginx :80/:443"]
+    Nginx -->|/| Next["Next.js 14 :3000"]
+    Nginx -->|/api/v1| FastAPI["FastAPI :8000"]
+
+    Next -->|Re-signed HS256 JWT| FastAPI
+    Next -->|OAuth 2.0| OAuth["Google / GitHub"]
+
+    FastAPI --> Scanner["URL Scanner"]
+    FastAPI --> Stripe["Stripe Service"]
+    Scanner -->|Analyze| Claude["Claude API"]
+
+    FastAPI --> PG[("PostgreSQL")]
+    FastAPI --> Redis[("Redis")]
 ```
-                    ┌──────────────┐
-    :80/:443        │    Nginx     │
-   ─────────────►   │ reverse proxy│
-                    └──────┬───────┘
-                           │
-              ┌────────────┼────────────┐
-              ▼                         ▼
-     ┌────────────────┐       ┌────────────────┐
-     │   Next.js 14   │       │    FastAPI     │
-     │   :3000        │       │    :8000       │
-     │                │       │                │
-     │ • Dashboard UI │       │ • REST API     │
-     │ • SSO (NextAuth│       │ • URL Scanner  │
-     │ • API Proxy    │──────►│ • Stripe hooks │
-     │ • Stripe UI    │ JWT   │ • Rate limiter │
-     └────────────────┘       └───────┬────────┘
-                                      │
-                         ┌────────────┼────────────┐
-                         ▼            ▼            ▼
-                  ┌──────────┐ ┌──────────┐ ┌──────────┐
-                  │PostgreSQL│ │  Redis   │ │Claude API│
-                  │  :5432   │ │  :6379   │ │(Anthropic│
-                  │          │ │          │ │          │
-                  │ Users    │ │ Cache    │ │ Content  │
-                  │ Scans    │ │ Sessions │ │ Analysis │
-                  │ Subs     │ │ Limits   │ │          │
-                  └──────────┘ └──────────┘ └──────────┘
+
+### Auth flow
+
+NextAuth.js encrypts JWTs as JWE (A256GCM). The backend uses python-jose which can't decrypt JWE. The solution:
+
 ```
+Browser → NextAuth (JWE token) → Next.js API Proxy → re-sign as HS256 JWT → FastAPI backend
+```
+
+The proxy at `/api/backend/[...path]` handles this transparently. The shared secret is `JWT_SECRET` (not NEXTAUTH_SECRET — they are separate keys since the security audit fix).
 
 ### Tech stack
 
@@ -110,31 +100,49 @@ open http://localhost/docs
 | Proxy | Nginx | SSL, routing, rate limiting |
 | Deploy | Docker Compose | One-command orchestration |
 
-### Auth flow
+---
 
-NextAuth.js encrypts JWTs as JWE (A256GCM). The backend uses python-jose which can't decrypt JWE. The solution:
+## Security
 
-```
-Browser → NextAuth (JWE token) → Next.js API Proxy → re-sign as HS256 JWT → FastAPI backend
-```
+A comprehensive security audit was performed on Feb 8, 2026 — see **[docs/Security.md](docs/Security.md)**.
 
-The proxy at `/api/backend/[...path]` handles this transparently. The shared secret is `NEXTAUTH_SECRET`.
+**All 7 critical vulnerabilities have been fixed:**
+
+| # | Vulnerability | Status |
+|---|---------------|--------|
+| C1 | `/users/sync` publicly accessible | ✅ X-Internal-Secret header |
+| C2 | JWT secret hardcoded to "change-me" | ✅ Startup validation, crashes if weak |
+| C3 | SSRF in URL scanner | ✅ IP blocklist + DNS resolution check |
+| C4 | Prompt injection via web content | ✅ Content sanitization + explicit instruction |
+| C5 | No error handling on Claude JSON | ✅ try/except + validation + fallback |
+| C6 | Missing security headers | ✅ CSP, HSTS, X-Frame-Options, etc. |
+| C7 | Weak JWT validation | ✅ require_sub, require_exp, claim validation |
+
+Additionally fixed: proxy path whitelist (E4), CSP headers (E5), JWT_SECRET separation (E10).
 
 ---
 
 ## Configuration
 
-Copy `.env.example` to `.env` and fill in your values:
+Copy `.env.example` to `.env` and fill in your values.
 
-### Required keys
+### Required secrets (⚠️ generate these!)
+
+```bash
+# These are MANDATORY — the app will crash without them
+JWT_SECRET=$(openssl rand -hex 32)              # Backend JWT signing
+INTERNAL_API_SECRET=$(openssl rand -hex 32)     # Frontend ↔ Backend internal auth
+NEXTAUTH_SECRET=$(openssl rand -base64 32)      # NextAuth session encryption
+```
+
+### Required API keys
 
 | Variable | Where to get it | Required for |
 |----------|----------------|---------------|
-| `NEXTAUTH_SECRET` | `openssl rand -base64 32` | Auth (everything) |
 | `GOOGLE_CLIENT_ID` | [Google Cloud Console](https://console.cloud.google.com/apis/credentials) | Google login |
 | `GOOGLE_CLIENT_SECRET` | Same | Google login |
-| `GITHUB_ID` | [GitHub Developer Settings](https://github.com/settings/developers) | GitHub login |
-| `GITHUB_SECRET` | Same | GitHub login |
+| `GITHUB_CLIENT_ID` | [GitHub Developer Settings](https://github.com/settings/developers) | GitHub login |
+| `GITHUB_CLIENT_SECRET` | Same | GitHub login |
 | `ANTHROPIC_API_KEY` | [Anthropic Console](https://console.anthropic.com/settings/keys) | URL scanner |
 | `STRIPE_SECRET_KEY` | [Stripe Dashboard](https://dashboard.stripe.com/test/apikeys) | Payments |
 | `STRIPE_WEBHOOK_SECRET` | Stripe CLI or Dashboard | Webhook verification |
@@ -148,34 +156,7 @@ Copy `.env.example` to `.env` and fill in your values:
 | `POSTGRES_USER` | `deadinet` | DB username |
 | `POSTGRES_PASSWORD` | `deadinet` | DB password (**change in prod**) |
 | `NEXTAUTH_URL` | `http://localhost:3000` | Public frontend URL |
-| `NEXT_PUBLIC_API_URL` | `http://localhost:8000` | Public API URL (for browser) |
-| `API_URL` | `http://backend:8000` | Internal API URL (Docker network) |
-| `SCAN_RATE_HUNTER` | `10` | Scans/day for Hunter tier |
-| `SCAN_RATE_OPERATOR` | `1000` | Scans/day for Operator tier |
-| `DEBUG` | `true` | Enables `/docs` endpoint |
-
-### Google OAuth setup
-
-1. Go to [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
-2. Create OAuth 2.0 Client ID (Web application)
-3. Add authorized redirect URI: `https://deadinternet.report/api/auth/callback/google`
-4. Copy Client ID and Secret to `.env`
-
-### GitHub OAuth setup
-
-1. Go to [GitHub Developer Settings](https://github.com/settings/developers)
-2. New OAuth App
-3. Authorization callback URL: `https://deadinternet.report/api/auth/callback/github`
-4. Copy Client ID and Secret to `.env`
-
-### Stripe setup
-
-1. Create 2 products in [Stripe Dashboard](https://dashboard.stripe.com/products):
-   - **Hunter** — $9/month recurring
-   - **Operator** — $29/month recurring
-2. Copy the Price IDs to `.env`
-3. Set up webhook endpoint: `https://deadinternet.report/api/v1/webhooks/stripe`
-4. Subscribe to events: `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`
+| `DEBUG` | `false` | Enables `/docs` endpoint |
 
 ---
 
@@ -186,57 +167,42 @@ Copy `.env.example` to `.env` and fill in your values:
 | Public dashboard | ✅ | ✅ | ✅ |
 | Global stats | ✅ | ✅ | ✅ |
 | Historical timeline | ✅ | ✅ | ✅ |
-| Platform breakdown | ✅ | ✅ | ✅ |
 | Live URL scanner | — | 10/day | Unlimited |
-| Platform alerts | — | ✅ | ✅ |
-| PDF export | — | ✅ | ✅ |
-| "Human Verified" badge | — | ✅ | ✅ |
+| Scan history | — | ✅ | ✅ |
 | API access (token) | — | — | ✅ |
 | Bulk URL analysis | — | — | ✅ |
-| Webhooks | — | — | ✅ |
 | Priority support | — | — | ✅ |
 
 ---
 
 ## API Reference
 
-Full interactive docs at `/docs` (Swagger UI) when running.
+Full docs: **[docs/API.md](docs/API.md)** | Interactive: `/docs` (when DEBUG=true)
 
-### Public endpoints (no auth)
-
+### Public endpoints
 ```
-GET  /api/v1/stats/           → Full dataset (index, global, platforms, timeline, ticker)
-GET  /api/v1/stats/platforms  → Platform breakdown (X, Reddit, LinkedIn, Web, Social)
+GET  /api/v1/stats/           → Full dataset
+GET  /api/v1/stats/platforms  → Platform breakdown
 GET  /api/v1/stats/timeline   → Historical data 2014-2026
-GET  /api/v1/stats/ticker     → Ticker tape facts array
-GET  /api/v1/stats/index      → Dead Internet Index score (0-1)
+GET  /api/v1/stats/ticker     → Ticker tape facts
+GET  /api/v1/stats/index      → Dead Internet Index
 GET  /health                  → Health check
 ```
 
-### Authenticated endpoints (Hunter+)
-
+### Authenticated (Hunter+)
 ```
-POST /api/v1/scanner/scan     → Analyze a URL {"url": "https://..."}
-GET  /api/v1/scanner/usage    → Current daily scan usage
-GET  /api/v1/scanner/history  → Scan history (paginated)
-```
-
-### User endpoints (auth required)
-
-```
-GET  /api/v1/users/me         → Current user profile
-POST /api/v1/users/sync       → Sync user from NextAuth (internal)
-POST /api/v1/users/checkout   → Create Stripe checkout session
-POST /api/v1/users/portal     → Open Stripe billing portal
+POST /api/v1/scanner/scan     → Analyze a URL
+GET  /api/v1/scanner/usage    → Daily scan usage
+GET  /api/v1/scanner/history  → Scan history
 ```
 
-### Webhooks
-
+### User management
 ```
-POST /api/v1/webhooks/stripe  → Stripe webhook receiver
+GET  /api/v1/users/me         → Profile
+POST /api/v1/users/sync       → Internal: sync from NextAuth
+POST /api/v1/users/checkout   → Stripe checkout
+POST /api/v1/users/portal     → Billing portal
 ```
-
-See [docs/API.md](docs/API.md) for detailed request/response examples.
 
 ---
 
@@ -244,169 +210,88 @@ See [docs/API.md](docs/API.md) for detailed request/response examples.
 
 ```
 .
-├── docker-compose.yml          # Orchestration (5 services)
-├── .env.example                # All env vars documented
+├── docker-compose.yml
+├── .env.example
+├── docs/
+│   ├── ARCHITECTURE.md         # ← Mermaid diagrams, flow charts
+│   ├── Security.md             # ← Audit report + fix status
+│   ├── API.md                  # ← Endpoint documentation
+│   └── DEPLOYMENT.md           # ← VPS deployment guide
 │
 ├── frontend/                   # Next.js 14
-│   ├── Dockerfile              # Multi-stage build (standalone)
-│   ├── package.json            # Dependencies
-│   ├── next.config.js          # Standalone output, image domains
-│   ├── tailwind.config.ts      # Custom "dead" color palette
 │   └── src/
 │       ├── app/
-│       │   ├── layout.tsx          # Root layout + SessionProvider
-│       │   ├── page.tsx            # Landing page (SSR, public)
-│       │   ├── login/page.tsx      # Google/GitHub SSO
-│       │   ├── pricing/page.tsx    # Tier comparison
-│       │   ├── dashboard/page.tsx  # Main dashboard (auth)
+│       │   ├── page.tsx            # Landing (SSR)
+│       │   ├── login/              # Google/GitHub SSO
+│       │   ├── pricing/            # Tier comparison
+│       │   ├── dashboard/          # Main dashboard
+│       │   │   ├── history/        # Scan history (Hunter+)
+│       │   │   └── success/        # Post-checkout
 │       │   └── api/
-│       │       ├── auth/[...nextauth]/route.ts  # NextAuth handler
-│       │       └── backend/[...path]/route.ts   # API proxy (JWT re-sign)
+│       │       ├── auth/           # NextAuth handler
+│       │       └── backend/        # API proxy (JWT re-sign)
 │       ├── components/
-│       │   ├── Providers.tsx            # SessionProvider wrapper
-│       │   ├── layout/Header.tsx        # Navigation + user menu
-│       │   └── dashboard/
-│       │       ├── DeadIndexGauge.tsx    # SVG circular gauge
-│       │       ├── StatCard.tsx         # Animated metric card
-│       │       ├── PlatformBreakdown.tsx # Horizontal bar chart
-│       │       ├── TimelineChart.tsx     # Recharts area chart
-│       │       ├── LiveScanner.tsx       # URL scanner UI
-│       │       └── TickerTape.tsx        # Scrolling news bar
-│       ├── lib/
-│       │   ├── auth.ts          # NextAuth config + callbacks
-│       │   ├── api-client.ts    # API client (public + proxied)
-│       │   ├── constants.ts     # Tier definitions + feature gates
-│       │   └── utils.ts         # Formatting helpers
-│       ├── hooks/
-│       │   ├── useCountUp.ts    # Animated counter
-│       │   └── useExtrapolation.ts  # Real-time counter
-│       └── types/
-│           └── next-auth.d.ts   # Session type augmentation
+│       │   ├── layout/             # Header, Footer, MobileNav
+│       │   ├── dashboard/          # Gauge, Charts, Scanner, etc.
+│       │   ├── landing/            # HeroCounter, LivePulse
+│       │   └── ui/                 # Toast, Skeleton
+│       └── lib/
+│           ├── auth.ts             # NextAuth config
+│           ├── api-client.ts       # API client
+│           └── constants.ts        # Tier definitions
 │
-├── backend/                    # FastAPI (async Python)
-│   ├── Dockerfile              # Python 3.12-slim
-│   ├── requirements.txt        # All deps pinned
-│   ├── alembic.ini             # DB migration config
-│   ├── alembic/
-│   │   ├── env.py              # Async migration setup
-│   │   └── script.py.mako      # Migration template
+├── backend/                    # FastAPI
 │   └── app/
-│       ├── main.py             # FastAPI app + lifespan
 │       ├── core/
-│       │   ├── config.py       # Pydantic settings (env vars)
-│       │   ├── database.py     # Async SQLAlchemy engine
-│       │   ├── redis.py        # Redis client wrapper
-│       │   ├── security.py     # JWT decode + auth dependencies
-│       │   └── rate_limiter.py  # Per-user daily scan limits
-│       ├── models/
-│       │   ├── user.py         # User (email, tier, stripe_id)
-│       │   ├── scan.py         # Scan (url, probability, verdict)
-│       │   └── subscription.py # Subscription (stripe sync)
-│       ├── schemas/
-│       │   ├── scan.py         # Request/response validation
-│       │   └── user.py         # Profile schemas
+│       │   ├── config.py           # Settings + secret validation
+│       │   ├── security.py         # JWT decode + auth
+│       │   ├── database.py         # Async SQLAlchemy
+│       │   └── rate_limiter.py     # Per-user scan limits
 │       ├── services/
-│       │   ├── scanner_service.py  # URL fetch + Claude analysis
-│       │   ├── stats_service.py    # Cached stats (Redis)
-│       │   └── stripe_service.py   # Checkout + webhook handling
+│       │   ├── scanner_service.py  # SSRF protection + Claude
+│       │   ├── stats_service.py    # Cached stats
+│       │   └── stripe_service.py   # Checkout + webhooks
 │       └── api/v1/
-│           ├── stats.py        # Public stats endpoints
-│           ├── scanner.py      # Scanner endpoints (auth)
-│           ├── users.py        # User + sync + billing
-│           └── webhooks.py     # Stripe webhook receiver
+│           ├── stats.py            # Public endpoints
+│           ├── scanner.py          # Auth + rate limited
+│           ├── users.py            # Sync + billing
+│           └── webhooks.py         # Stripe receiver
 │
 ├── nginx/                      # Reverse proxy
-│   ├── Dockerfile
-│   ├── nginx.conf              # Routing rules + rate limiting
-│   └── certs/                  # SSL certs (mount in prod)
-│
-└── scripts/
-    └── seed_data.py            # Redis cache seeder
+└── scripts/                    # Utilities
 ```
 
 ---
 
 ## Development
 
-### Local setup (without Docker)
-
 ```bash
-# Backend
-cd backend
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-# Need PostgreSQL + Redis running locally
-export DATABASE_URL="postgresql+asyncpg://user:pass@localhost:5432/deadinternet"
-export REDIS_URL="redis://localhost:6379/0"
-uvicorn app.main:app --reload --port 8000
+# Full stack with Docker
+docker compose up -d
+docker compose logs -f
 
-# Frontend (new terminal)
-cd frontend
-npm install
-cp ../.env.example .env.local  # Edit with local values
-npm run dev
-```
-
-### Useful commands
-
-```bash
-# Rebuild after code changes
+# Rebuild after changes
 docker compose build && docker compose up -d
-
-# View logs
-docker compose logs -f backend
-docker compose logs -f frontend
 
 # Reset everything
 docker compose down -v && docker compose up -d
 
-# Seed Redis cache
-docker compose exec backend python -m scripts.seed_data
-
-# Create a DB migration
+# DB migrations
 docker compose exec backend alembic revision --autogenerate -m "description"
 docker compose exec backend alembic upgrade head
-
-# Access PostgreSQL
-docker compose exec db psql -U deadinet -d deadinternet
-
-# Access Redis
-docker compose exec redis redis-cli
 ```
 
 ---
 
-## Deployment (Production)
+## Documentation
 
-See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the full VPS deployment guide with SSL, DNS, and systemd.
-
-Quick version:
-
-```bash
-# On your VPS (Ubuntu 24)
-sudo apt update && sudo apt install -y docker.io docker-compose-v2
-git clone https://github.com/nabz0r/deadinternet.report.git
-cd deadinternet.report
-cp .env.example .env && nano .env  # Fill in production values
-
-# Set production URLs
-# NEXTAUTH_URL=https://deadinternet.report
-# NEXT_PUBLIC_API_URL=https://deadinternet.report
-
-docker compose up -d
-```
-
----
-
-## Contributing
-
-1. Fork it
-2. Create a feature branch (`git checkout -b feat/awesome-thing`)
-3. Commit with conventional commits (`git commit -m 'feat: add awesome thing'`)
-4. Push to your fork (`git push origin feat/awesome-thing`)
-5. Open a Pull Request
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+| Document | Description |
+|----------|-------------|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Architecture diagrams, auth flow, data model, component tree |
+| [docs/Security.md](docs/Security.md) | Security audit report, vulnerability status, remediation timeline |
+| [docs/API.md](docs/API.md) | API endpoint reference with examples |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Production deployment guide (VPS, SSL, DNS) |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Contribution guidelines |
 
 ---
 

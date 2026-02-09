@@ -1,0 +1,410 @@
+# 🏗️ Architecture — deadinternet.report
+
+> Vue d'ensemble de l'architecture, des flux de données et des décisions techniques.
+
+---
+
+## Vue d'ensemble
+
+```mermaid
+graph TB
+    subgraph Internet
+        Browser["🌐 Navigateur"]
+        Stripe["💳 Stripe API"]
+        Claude["🤖 Claude API<br/>(Anthropic)"]
+        OAuth["🔑 Google / GitHub<br/>OAuth Providers"]
+    end
+
+    subgraph Docker["Docker Compose"]
+        Nginx["Nginx<br/>:80/:443<br/>Reverse Proxy"]
+
+        subgraph Frontend["Frontend Container"]
+            Next["Next.js 14<br/>:3000<br/>App Router + SSR"]
+            NextAuth["NextAuth.js<br/>JWT Sessions"]
+            Proxy["API Proxy<br/>/api/backend/*"]
+        end
+
+        subgraph Backend["Backend Container"]
+            FastAPI["FastAPI<br/>:8000<br/>Async Python"]
+            Scanner["Scanner Service<br/>SSRF Protection<br/>Prompt Sanitization"]
+            StripeService["Stripe Service<br/>Checkout + Webhooks"]
+            RateLimiter["Rate Limiter<br/>Per-user daily limits"]
+        end
+
+        subgraph Data["Data Layer"]
+            PG[("PostgreSQL 16<br/>:5432<br/>Users, Scans, Subs")]
+            Redis[("Redis 7<br/>:6379<br/>Cache, Rate Limits")]
+        end
+    end
+
+    Browser -->|HTTPS| Nginx
+    Nginx -->|/| Next
+    Nginx -->|/api/v1| FastAPI
+    Nginx -->|/api/v1/webhooks| FastAPI
+
+    Next -->|SSO| NextAuth
+    NextAuth -->|OAuth 2.0| OAuth
+    Next -->|Re-signed JWT| Proxy
+    Proxy -->|HS256 JWT| FastAPI
+
+    FastAPI --> Scanner
+    FastAPI --> StripeService
+    FastAPI --> RateLimiter
+
+    Scanner -->|Fetch + Analyze| Claude
+    StripeService -->|Webhooks| Stripe
+
+    FastAPI --> PG
+    FastAPI --> Redis
+    RateLimiter --> Redis
+
+    style Nginx fill:#1a1a2e,color:#ff6600,stroke:#ff6600
+    style Next fill:#111,color:#e0e0e0,stroke:#333
+    style FastAPI fill:#111,color:#00cc66,stroke:#00cc66
+    style PG fill:#111,color:#4169E1,stroke:#4169E1
+    style Redis fill:#111,color:#DC382D,stroke:#DC382D
+    style Claude fill:#111,color:#d4a574,stroke:#d4a574
+    style Stripe fill:#111,color:#635BFF,stroke:#635BFF
+```
+
+---
+
+## Flux d'authentification
+
+Le flow auth est non-standard car NextAuth.js chiffre ses JWT en JWE (A256GCM),
+imposible à décoder côté Python. Solution : le proxy Next.js re-signe en HS256.
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant N as Next.js
+    participant NA as NextAuth
+    participant P as API Proxy
+    participant F as FastAPI
+    participant DB as PostgreSQL
+
+    Note over B,NA: 1. Login Flow
+    B->>N: GET /login
+    N->>B: Render login page
+    B->>NA: Click "Sign in with Google"
+    NA->>B: Redirect → Google OAuth
+    B->>NA: OAuth callback with code
+    NA->>NA: Create JWE session token
+
+    Note over NA,F: 2. First Login — User Sync
+    NA->>F: POST /api/v1/users/sync
+    Note right of NA: Header: X-Internal-Secret
+    F->>DB: INSERT or UPDATE user
+    DB->>F: User record + tier
+    F->>NA: {id, tier: "ghost"}
+    NA->>NA: Store tier in JWT claims
+    NA->>B: Set session cookie (JWE)
+
+    Note over B,F: 3. Authenticated API Call
+    B->>P: POST /api/backend/scanner/scan
+    Note right of B: Cookie: next-auth session
+    P->>P: Decode JWE → extract claims
+    P->>P: Re-sign as HS256 JWT
+    Note right of P: JWT_SECRET (shared)
+    P->>F: POST /api/v1/scanner/scan
+    Note right of P: Authorization: Bearer <HS256>
+    F->>F: Verify JWT, extract user
+    F->>B: Scan results
+```
+
+---
+
+## Flux du scanner
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant F as FastAPI
+    participant RL as Rate Limiter
+    participant R as Redis
+    participant S as Scanner Service
+    participant Web as Target URL
+    participant C as Claude API
+    participant DB as PostgreSQL
+
+    U->>F: POST /api/v1/scanner/scan {url}
+    F->>F: Verify JWT → user_id, tier
+
+    F->>RL: Check daily usage
+    RL->>R: GET scan_count:{user_id}
+    R->>RL: count
+    alt Limit exceeded
+        RL->>U: 429 Too Many Requests
+    end
+
+    F->>S: scan_url(url)
+    S->>S: validate_url()
+    Note right of S: Block private IPs,<br/>localhost, metadata,<br/>non-HTTP schemes
+
+    S->>Web: HTTP GET (timeout 10s)
+    Web->>S: HTML content
+
+    S->>S: sanitize_content()
+    Note right of S: Remove prompt injection<br/>patterns, truncate to 3000 chars
+
+    S->>C: messages.create()
+    Note right of S: System: SCANNER_PROMPT<br/>User: <content_to_analyze>...
+    C->>S: JSON response
+
+    S->>S: Parse + validate JSON
+    Note right of S: Clamp ai_probability [0,1]<br/>Validate verdict enum<br/>Fallback on parse error
+
+    S->>DB: INSERT scan record
+    S->>R: INCR scan_count:{user_id}
+    S->>U: {ai_probability, verdict, analysis, signals}
+```
+
+---
+
+## Flux de paiement Stripe
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant N as Next.js
+    participant F as FastAPI
+    participant S as Stripe
+    participant DB as PostgreSQL
+
+    Note over U,S: 1. Checkout
+    U->>N: Click "UPGRADE" on /pricing
+    N->>F: POST /api/v1/users/checkout?price_id=...
+    F->>F: Validate price_id ∈ [hunter, operator]
+    F->>S: stripe.checkout.Session.create()
+    S->>F: {url: checkout_url}
+    F->>N: {checkout_url}
+    N->>U: Redirect → Stripe Checkout
+
+    Note over U,S: 2. Payment
+    U->>S: Complete payment on Stripe
+    S->>U: Redirect → /dashboard/success
+
+    Note over S,DB: 3. Webhook (async)
+    S->>F: POST /api/v1/webhooks/stripe
+    Note right of S: checkout.session.completed
+    F->>F: Verify webhook signature
+    F->>S: Retrieve subscription details
+    S->>F: {price_id, status}
+    F->>DB: UPDATE user SET tier = 'hunter'
+    F->>DB: INSERT subscription record
+    F->>S: 200 OK
+
+    Note over U,DB: 4. Session Refresh
+    U->>N: Visit /dashboard/success
+    N->>N: session.update() → refresh tier
+    N->>U: "UPGRADE COMPLETE" + countdown
+    N->>U: Redirect → /dashboard
+```
+
+---
+
+## Modèle de données
+
+```mermaid
+erDiagram
+    USER {
+        string id PK "UUID from OAuth"
+        string email UK "Unique, indexed"
+        string name "Display name"
+        string image "Avatar URL"
+        string tier "ghost|hunter|operator"
+        string stripe_customer_id "Nullable"
+        datetime created_at
+        datetime updated_at
+    }
+
+    SCAN {
+        int id PK "Auto-increment"
+        string user_id FK "→ USER.id"
+        string url "Scanned URL"
+        float ai_probability "0.0 - 1.0"
+        string verdict "human|mixed|ai_generated"
+        string analysis "Claude's explanation"
+        json signals "Array of detected patterns"
+        string content_snippet "First 500 chars"
+        datetime created_at
+    }
+
+    SUBSCRIPTION {
+        int id PK "Auto-increment"
+        string user_id FK "→ USER.id"
+        string stripe_subscription_id UK
+        string stripe_price_id
+        string status "active|canceled|past_due"
+        string tier "hunter|operator"
+        datetime created_at
+        datetime updated_at
+    }
+
+    USER ||--o{ SCAN : "performs"
+    USER ||--o| SUBSCRIPTION : "has"
+```
+
+---
+
+## Structure des routes
+
+```mermaid
+graph LR
+    subgraph Public["Routes publiques"]
+        LP["/"] -->|Landing| SSR["SSR - page.tsx"]
+        PR["/pricing"] -->|Tiers| Client["Client component"]
+        LG["/login"] -->|Auth| NextAuth
+        TOS["/terms"] -->|Legal| SSR2["SSR"]
+        PIV["/privacy"] -->|Legal| SSR3["SSR"]
+    end
+
+    subgraph Protected["Routes protégées (middleware)"]
+        DB["/dashboard"] -->|Stats| Dashboard
+        HI["/dashboard/history"] -->|Hunter+| History
+        SU["/dashboard/success"] -->|Post-checkout| Success
+    end
+
+    subgraph API["API Routes (Next.js)"]
+        AUTH["/api/auth/*"] -->|NextAuth| Handlers
+        BK["/api/backend/*"] -->|Proxy| FastAPI
+    end
+
+    subgraph Backend["FastAPI Endpoints"]
+        ST["/api/v1/stats/*"] -->|Public| Stats
+        SC["/api/v1/scanner/*"] -->|Auth + Rate limit| Scanner
+        US["/api/v1/users/*"] -->|Auth / Internal| Users
+        WH["/api/v1/webhooks/stripe"] -->|Stripe signature| Webhooks
+    end
+
+    style Public fill:#0a0a0a,color:#e0e0e0,stroke:#333
+    style Protected fill:#0a0a0a,color:#ff6600,stroke:#ff6600
+    style API fill:#0a0a0a,color:#ffaa00,stroke:#ffaa00
+    style Backend fill:#0a0a0a,color:#00cc66,stroke:#00cc66
+```
+
+---
+
+## Stack de sécurité
+
+```mermaid
+graph TB
+    subgraph Perimeter["Périmètre"]
+        NGINX["Nginx<br/>Rate limit 30r/s<br/>SSL termination"]
+        CSP["CSP Headers<br/>X-Frame-Options<br/>HSTS"]
+    end
+
+    subgraph Auth["Authentification"]
+        OAuth2["OAuth 2.0<br/>Google + GitHub"]
+        JWE["JWE Tokens<br/>(NextAuth)"]
+        HS256["HS256 JWT<br/>(Backend)"]
+        Internal["X-Internal-Secret<br/>(/users/sync)"]
+    end
+
+    subgraph Validation["Validation"]
+        SSRF["SSRF Protection<br/>IP blocklist + DNS check"]
+        Prompt["Prompt Injection<br/>Content sanitization"]
+        JSONVal["JSON Validation<br/>Clamp + fallback"]
+        PathWL["Path Whitelist<br/>Proxy route"]
+        PriceVal["Price ID Validation<br/>Stripe checkout"]
+    end
+
+    subgraph Secrets["Gestion des secrets"]
+        EnvVal["Startup Validation<br/>Crash si secrets faibles"]
+        NoDefault["Pas de valeurs par défaut<br/>JWT_SECRET, INTERNAL_API_SECRET"]
+        CompareDigest["secrets.compare_digest<br/>Timing-safe comparison"]
+    end
+
+    NGINX --> CSP
+    CSP --> OAuth2
+    OAuth2 --> JWE --> HS256
+    HS256 --> Internal
+    Internal --> SSRF
+    SSRF --> Prompt --> JSONVal
+    PathWL --> PriceVal
+    EnvVal --> NoDefault --> CompareDigest
+
+    style Perimeter fill:#1a1a1a,color:#ff6600,stroke:#ff6600
+    style Auth fill:#1a1a1a,color:#00cc66,stroke:#00cc66
+    style Validation fill:#1a1a1a,color:#ffaa00,stroke:#ffaa00
+    style Secrets fill:#1a1a1a,color:#ff4444,stroke:#ff4444
+```
+
+---
+
+## Composants frontend
+
+```mermaid
+graph TB
+    subgraph Layout["Layout"]
+        RootLayout["layout.tsx<br/>Providers wrapper"]
+        Header["Header.tsx<br/>Nav + User menu + Tier badge"]
+        Footer["Footer.tsx<br/>Links"]
+        MobileNav["MobileNav.tsx<br/>Fixed bottom nav (mobile)"]
+    end
+
+    subgraph Dashboard["Dashboard Components"]
+        Gauge["DeadIndexGauge<br/>SVG circular gauge"]
+        StatCard["StatCard<br/>Animated metric"]
+        Timeline["TimelineChart<br/>Recharts area"]
+        Platform["PlatformBreakdown<br/>Horizontal bars"]
+        LiveScan["LiveScanner<br/>URL input + results"]
+        Ticker["TickerTape<br/>Scrolling news"]
+        Upgrade["UpgradeBanner<br/>CTA for Ghost users"]
+    end
+
+    subgraph Landing["Landing Components"]
+        HeroCounter["HeroCounter<br/>Animated count-up<br/>IntersectionObserver"]
+        LivePulse["LivePulse<br/>Pulsing green dot"]
+    end
+
+    subgraph UI["UI System"]
+        Toast["Toast<br/>Context-based notifications<br/>Auto-dismiss 4s"]
+        Skeleton["Skeleton<br/>Loading placeholders<br/>Card, Gauge, Chart, Table"]
+    end
+
+    RootLayout --> Header
+    RootLayout --> Footer
+    RootLayout --> MobileNav
+    RootLayout --> Toast
+
+    style Layout fill:#111,color:#e0e0e0,stroke:#333
+    style Dashboard fill:#111,color:#ff6600,stroke:#ff6600
+    style Landing fill:#111,color:#00cc66,stroke:#00cc66
+    style UI fill:#111,color:#ffaa00,stroke:#ffaa00
+```
+
+---
+
+## Variables d'environnement
+
+```mermaid
+graph LR
+    subgraph Required["🔴 Obligatoires"]
+        JWT["JWT_SECRET<br/>openssl rand -hex 32"]
+        INTERNAL["INTERNAL_API_SECRET<br/>openssl rand -hex 32"]
+        NEXTAUTH["NEXTAUTH_SECRET<br/>openssl rand -base64 32"]
+        ANTHROPIC["ANTHROPIC_API_KEY"]
+        STRIPE_SK["STRIPE_SECRET_KEY"]
+        STRIPE_WH["STRIPE_WEBHOOK_SECRET"]
+        STRIPE_PH["STRIPE_PRICE_HUNTER"]
+        STRIPE_PO["STRIPE_PRICE_OPERATOR"]
+        GOOGLE["GOOGLE_CLIENT_ID/SECRET"]
+        GITHUB["GITHUB_CLIENT_ID/SECRET"]
+    end
+
+    subgraph Optional["🟡 Optionnelles"]
+        DB_URL["DATABASE_URL<br/>default: docker internal"]
+        REDIS["REDIS_URL<br/>default: redis://redis:6379"]
+        DEBUG["DEBUG<br/>default: false"]
+        CORS["CORS_ORIGINS"]
+    end
+
+    JWT -->|Backend| FastAPI
+    JWT -->|Frontend| Proxy["API Proxy route"]
+    INTERNAL -->|Frontend| AuthTS["auth.ts"]
+    INTERNAL -->|Backend| UsersSync["/users/sync"]
+
+    style Required fill:#1a1a1a,color:#ff4444,stroke:#ff4444
+    style Optional fill:#1a1a1a,color:#ffaa00,stroke:#ffaa00
+```
