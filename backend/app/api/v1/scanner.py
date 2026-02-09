@@ -6,9 +6,11 @@ GET  /api/v1/scanner/usage   -> Current scan usage
 GET  /api/v1/scanner/history  -> Scan history (requires Hunter+)
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+import logging
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
+from typing import Annotated
 
 from app.core.database import get_db
 from app.core.security import require_auth, require_tier
@@ -17,6 +19,7 @@ from app.services.scanner_service import scanner_service
 from app.models.scan import Scan
 from app.schemas.scan import ScanRequest, ScanResponse, ScanResult, ScanUsage
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -33,8 +36,13 @@ async def scan_url(
     # Run analysis
     try:
         result = await scanner_service.analyze(str(request.url))
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Scan failed: {str(e)}")
+    except ValueError as e:
+        # Validation errors (SSRF, bad URL) — safe to show
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        # All other errors — generic message, log details server-side
+        logger.exception("Scan failed for URL: %s", str(request.url)[:200])
+        raise HTTPException(status_code=502, detail="Scan failed. The URL may be unreachable or content could not be analyzed.")
 
     # Save to DB
     scan = Scan(
@@ -65,8 +73,8 @@ async def get_usage(user: dict = Depends(require_auth)):
 
 @router.get("/history")
 async def get_history(
-    limit: int = 20,
-    offset: int = 0,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
     user: dict = Depends(require_tier("hunter")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -75,7 +83,7 @@ async def get_history(
         select(Scan)
         .where(Scan.user_id == user["id"])
         .order_by(Scan.created_at.desc())
-        .limit(min(limit, 100))
+        .limit(limit)
         .offset(offset)
     )
     scans = result.scalars().all()
