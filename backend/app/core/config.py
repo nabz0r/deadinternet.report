@@ -1,11 +1,14 @@
-"""
-Application settings loaded from environment variables.
+"""Application settings loaded from environment variables.
 All config is centralized here - no magic strings elsewhere.
 """
 
+import sys
 from pydantic import field_validator
 from pydantic_settings import BaseSettings
 from typing import List
+
+# Known-bad secrets that must never be used in production
+INSECURE_SECRETS = {"change-me", "secret", "password", "test", ""}
 
 
 class Settings(BaseSettings):
@@ -20,8 +23,28 @@ class Settings(BaseSettings):
     redis_url: str = "redis://redis:6379/0"
 
     # Auth - MUST match NEXTAUTH_SECRET from frontend
-    jwt_secret: str = "change-me"
+    jwt_secret: str = ""
     jwt_algorithm: str = "HS256"
+
+    # Internal secret for server-to-server calls (NextAuth -> FastAPI)
+    internal_api_secret: str = ""
+
+    @field_validator("jwt_secret", mode="after")
+    @classmethod
+    def validate_jwt_secret(cls, v):
+        if v in INSECURE_SECRETS:
+            print(
+                "\n" + "=" * 60
+                + "\nFATAL: JWT_SECRET is not set or uses an insecure default."
+                + "\nGenerate one with: openssl rand -base64 32"
+                + "\nSet it in your .env file as JWT_SECRET=<value>"
+                + "\n" + "=" * 60 + "\n",
+                file=sys.stderr,
+            )
+            raise ValueError("JWT_SECRET must be set to a secure value")
+        if len(v) < 16:
+            raise ValueError("JWT_SECRET must be at least 16 characters")
+        return v
 
     # CORS - accepts comma-separated string or JSON array
     cors_origins: List[str] = ["http://localhost:3000", "https://deadinternet.report"]

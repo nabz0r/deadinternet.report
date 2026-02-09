@@ -3,7 +3,7 @@ Pydantic schemas for scan endpoints.
 Request/response validation and serialization.
 """
 
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, HttpUrl, Field
 from datetime import datetime
 
 
@@ -11,7 +11,7 @@ from datetime import datetime
 
 class ScanRequest(BaseModel):
     """POST /api/v1/scanner/scan"""
-    url: HttpUrl
+    url: HttpUrl = Field(..., max_length=2000)
 
 
 # --- Responses ---
@@ -20,7 +20,7 @@ class ScanResult(BaseModel):
     """Scan analysis result."""
     id: str
     url: str
-    ai_probability: float  # 0.0 - 1.0
+    ai_probability: float = Field(ge=0.0, le=1.0)
     verdict: str  # human | mixed | ai_generated
     analysis: str | None = None
     content_snippet: str | None = None
@@ -34,9 +34,9 @@ class ScanResult(BaseModel):
 
 class ScanUsage(BaseModel):
     """Current scan usage info."""
-    used: int
-    limit: int
-    remaining: int
+    used: int = Field(ge=0)
+    limit: int = Field(ge=0)
+    remaining: int = Field(ge=0)
 
 
 class ScanResponse(BaseModel):

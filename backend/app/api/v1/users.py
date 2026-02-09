@@ -7,10 +7,12 @@ POST /api/v1/users/checkout   -> Create Stripe checkout session
 POST /api/v1/users/portal     -> Create Stripe billing portal
 """
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+import logging
+from fastapi import APIRouter, Depends, HTTPException, Request, Query
+from pydantic import BaseModel, EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from typing import Annotated
 
 from app.core.database import get_db
 from app.core.security import require_auth
@@ -21,27 +23,40 @@ from app.schemas.user import UserProfile
 
 import stripe
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
 class UserSyncRequest(BaseModel):
     """Payload from NextAuth JWT callback on first login."""
     id: str
-    email: str
+    email: EmailStr
     name: str | None = None
     image: str | None = None
+
+
+def _verify_internal_secret(request: Request):
+    """Verify the request comes from our NextAuth backend, not an external attacker."""
+    secret = request.headers.get("X-Internal-Secret", "")
+    # Use jwt_secret as shared secret if internal_api_secret not set
+    expected = settings.internal_api_secret or settings.jwt_secret
+    if not secret or secret != expected:
+        raise HTTPException(status_code=403, detail="Forbidden")
 
 
 @router.post("/sync")
 async def sync_user(
     payload: UserSyncRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """
     Sync user from NextAuth on login.
     Creates user if not exists, returns current tier.
-    Called server-side by NextAuth JWT callback - no auth header needed.
+    Protected by internal secret header — NOT publicly accessible.
     """
+    _verify_internal_secret(request)
+
     result = await db.execute(
         select(User).where(User.email == payload.email)
     )
@@ -79,7 +94,7 @@ async def get_profile(
 
 @router.post("/checkout")
 async def create_checkout(
-    price_id: str,
+    price_id: Annotated[str, Query(max_length=100, pattern=r"^price_[a-zA-Z0-9]+$")],
     user: dict = Depends(require_auth),
 ):
     """Create a Stripe Checkout session for subscription."""

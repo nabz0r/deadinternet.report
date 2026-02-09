@@ -6,6 +6,8 @@
  * On first sign-in, syncs user to backend via /users/sync.
  * JWT callback stores tier from backend.
  * Session callback exposes tier and id to client.
+ *
+ * Security: /users/sync is protected by X-Internal-Secret header.
  */
 
 import type { NextAuthOptions } from 'next-auth'
@@ -13,6 +15,7 @@ import GoogleProvider from 'next-auth/providers/google'
 import GitHubProvider from 'next-auth/providers/github'
 
 const BACKEND_URL = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://backend:8000'
+const INTERNAL_SECRET = process.env.INTERNAL_API_SECRET || process.env.NEXTAUTH_SECRET || ''
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -38,7 +41,10 @@ export const authOptions: NextAuthOptions = {
         try {
           const res = await fetch(`${BACKEND_URL}/api/v1/users/sync`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Internal-Secret': INTERNAL_SECRET,
+            },
             body: JSON.stringify({
               id: user.id || token.sub,
               email: user.email,
