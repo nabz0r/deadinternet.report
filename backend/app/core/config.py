@@ -1,8 +1,12 @@
 """
 Application settings loaded from environment variables.
 All config is centralized here - no magic strings elsewhere.
+
+CRITICAL: jwt_secret and internal_api_secret MUST be set via env vars.
+The app will refuse to start with insecure defaults.
 """
 
+import sys
 from pydantic import field_validator
 from pydantic_settings import BaseSettings
 from typing import List
@@ -10,7 +14,7 @@ from typing import List
 
 class Settings(BaseSettings):
     # General
-    debug: bool = True
+    debug: bool = False
     api_version: str = "v1"
 
     # Database
@@ -20,8 +24,13 @@ class Settings(BaseSettings):
     redis_url: str = "redis://redis:6379/0"
 
     # Auth - MUST match NEXTAUTH_SECRET from frontend
-    jwt_secret: str = "change-me"
+    # NO DEFAULT - must be set via environment variable
+    jwt_secret: str = ""
     jwt_algorithm: str = "HS256"
+
+    # Internal API secret for server-to-server calls (NextAuth -> FastAPI)
+    # NO DEFAULT - must be set via environment variable
+    internal_api_secret: str = ""
 
     # CORS - accepts comma-separated string or JSON array
     cors_origins: List[str] = ["http://localhost:3000", "https://deadinternet.report"]
@@ -57,3 +66,18 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# ── Startup validation ──────────────────────────────────────────────
+_INSECURE_SECRETS = {"", "change-me", "secret", "test", "dev"}
+
+if settings.jwt_secret.lower() in _INSECURE_SECRETS:
+    print("\n❌ FATAL: JWT_SECRET is not set or uses an insecure default.")
+    print("   Set a strong random value in your .env file:")
+    print("   JWT_SECRET=$(openssl rand -hex 32)")
+    sys.exit(1)
+
+if settings.internal_api_secret.lower() in _INSECURE_SECRETS:
+    print("\n❌ FATAL: INTERNAL_API_SECRET is not set or uses an insecure default.")
+    print("   Set a strong random value in your .env file:")
+    print("   INTERNAL_API_SECRET=$(openssl rand -hex 32)")
+    sys.exit(1)

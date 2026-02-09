@@ -28,10 +28,23 @@ async def get_current_user(
             credentials.credentials,
             settings.jwt_secret,
             algorithms=[settings.jwt_algorithm],
+            options={
+                "require_sub": True,
+                "require_exp": True,
+            },
         )
+
+        sub = payload.get("sub")
+        email = payload.get("email")
+        if not sub or not email:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Malformed token: missing required claims",
+            )
+
         return {
-            "id": payload.get("sub"),
-            "email": payload.get("email"),
+            "id": sub,
+            "email": email,
             "tier": payload.get("tier", "ghost"),
         }
     except JWTError:

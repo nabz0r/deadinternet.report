@@ -2,13 +2,13 @@
 User endpoints - profile and subscription management.
 
 GET  /api/v1/users/me         -> Current user profile
-POST /api/v1/users/sync       -> Sync user from NextAuth (called on login)
+POST /api/v1/users/sync       -> Sync user from NextAuth (internal only)
 POST /api/v1/users/checkout   -> Create Stripe checkout session
 POST /api/v1/users/portal     -> Create Stripe billing portal
 """
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Header
+from pydantic import BaseModel, EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -20,6 +20,7 @@ from app.services.stripe_service import stripe_service
 from app.schemas.user import UserProfile
 
 import stripe
+import secrets
 
 router = APIRouter()
 
@@ -27,20 +28,31 @@ router = APIRouter()
 class UserSyncRequest(BaseModel):
     """Payload from NextAuth JWT callback on first login."""
     id: str
-    email: str
+    email: EmailStr  # Validate email format
     name: str | None = None
     image: str | None = None
+
+
+async def verify_internal_secret(
+    x_internal_secret: str | None = Header(None, alias="X-Internal-Secret"),
+) -> None:
+    """Verify that the request comes from our NextAuth backend."""
+    if not x_internal_secret:
+        raise HTTPException(status_code=401, detail="Missing internal auth")
+    if not secrets.compare_digest(x_internal_secret, settings.internal_api_secret):
+        raise HTTPException(status_code=403, detail="Invalid internal auth")
 
 
 @router.post("/sync")
 async def sync_user(
     payload: UserSyncRequest,
+    _: None = Depends(verify_internal_secret),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Sync user from NextAuth on login.
     Creates user if not exists, returns current tier.
-    Called server-side by NextAuth JWT callback - no auth header needed.
+    Protected by internal API secret - not accessible from public internet.
     """
     result = await db.execute(
         select(User).where(User.email == payload.email)
