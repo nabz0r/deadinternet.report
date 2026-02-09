@@ -60,6 +60,9 @@ class Settings(BaseSettings):
     # Cache TTL (seconds)
     stats_cache_ttl: int = 3600  # 1 hour
 
+    # Scan result cache TTL (seconds)
+    scan_cache_ttl: int = 86400  # 24 hours
+
     class Config:
         env_file = ".env"
         case_sensitive = False
@@ -71,13 +74,31 @@ settings = Settings()
 _INSECURE_SECRETS = {"", "change-me", "secret", "test", "dev"}
 
 if settings.jwt_secret.lower() in _INSECURE_SECRETS:
-    print("\n❌ FATAL: JWT_SECRET is not set or uses an insecure default.")
+    print("\nFATAL: JWT_SECRET is not set or uses an insecure default.")
     print("   Set a strong random value in your .env file:")
     print("   JWT_SECRET=$(openssl rand -hex 32)")
     sys.exit(1)
 
 if settings.internal_api_secret.lower() in _INSECURE_SECRETS:
-    print("\n❌ FATAL: INTERNAL_API_SECRET is not set or uses an insecure default.")
+    print("\nFATAL: INTERNAL_API_SECRET is not set or uses an insecure default.")
     print("   Set a strong random value in your .env file:")
     print("   INTERNAL_API_SECRET=$(openssl rand -hex 32)")
     sys.exit(1)
+
+# ── Optional service warnings ───────────────────────────────────────
+_OPTIONAL_WARNINGS = []
+
+if not settings.anthropic_api_key:
+    _OPTIONAL_WARNINGS.append("ANTHROPIC_API_KEY not set - scanner will not work")
+
+if not settings.stripe_secret_key:
+    _OPTIONAL_WARNINGS.append("STRIPE_SECRET_KEY not set - payments will not work")
+
+if not settings.stripe_webhook_secret:
+    _OPTIONAL_WARNINGS.append("STRIPE_WEBHOOK_SECRET not set - webhooks will not verify")
+
+if not settings.stripe_price_hunter or not settings.stripe_price_operator:
+    _OPTIONAL_WARNINGS.append("STRIPE_PRICE_* not set - checkout will not work")
+
+for warning in _OPTIONAL_WARNINGS:
+    print(f"  WARNING: {warning}")

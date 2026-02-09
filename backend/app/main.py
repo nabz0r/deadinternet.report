@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.database import engine, Base
 from app.core.redis import redis_client
+from app.middleware.ip_rate_limit import IPRateLimitMiddleware
 
 # CRITICAL: import all models so SQLAlchemy knows about them
 # for Base.metadata.create_all() to work
@@ -28,8 +29,9 @@ from app.api.v1 import stats, scanner, users, webhooks
 async def lifespan(app: FastAPI):
     """Startup/shutdown events."""
     # Startup: create tables (dev only, use alembic in prod)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    if settings.debug:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
     # Connect redis
     await redis_client.connect()
     yield
@@ -46,7 +48,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS
+# Middleware (order matters: last added = first executed)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -54,6 +56,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(IPRateLimitMiddleware)
 
 # Routes
 app.include_router(stats.router, prefix="/api/v1/stats", tags=["stats"])

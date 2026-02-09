@@ -1,18 +1,18 @@
-# 🏗️ Architecture — deadinternet.report
+# Architecture — deadinternet.report
 
-> Vue d'ensemble de l'architecture, des flux de données et des décisions techniques.
+> Overview of the architecture, data flows, and technical decisions.
 
 ---
 
-## Vue d'ensemble
+## Overview
 
 ```mermaid
 graph TB
     subgraph Internet
-        Browser["🌐 Navigateur"]
-        Stripe["💳 Stripe API"]
-        Claude["🤖 Claude API<br/>(Anthropic)"]
-        OAuth["🔑 Google / GitHub<br/>OAuth Providers"]
+        Browser["Browser"]
+        Stripe["Stripe API"]
+        Claude["Claude API<br/>(Anthropic)"]
+        OAuth["Google / GitHub<br/>OAuth Providers"]
     end
 
     subgraph Docker["Docker Compose"]
@@ -69,10 +69,10 @@ graph TB
 
 ---
 
-## Flux d'authentification
+## Authentication Flow
 
-Le flow auth est non-standard car NextAuth.js chiffre ses JWT en JWE (A256GCM),
-imposible à décoder côté Python. Solution : le proxy Next.js re-signe en HS256.
+The auth flow is non-standard because NextAuth.js encrypts its JWTs as JWE (A256GCM),
+which cannot be decoded on the Python side. Solution: the Next.js proxy re-signs tokens as HS256.
 
 ```mermaid
 sequenceDiagram
@@ -87,11 +87,11 @@ sequenceDiagram
     B->>N: GET /login
     N->>B: Render login page
     B->>NA: Click "Sign in with Google"
-    NA->>B: Redirect → Google OAuth
+    NA->>B: Redirect -> Google OAuth
     B->>NA: OAuth callback with code
     NA->>NA: Create JWE session token
 
-    Note over NA,F: 2. First Login — User Sync
+    Note over NA,F: 2. First Login - User Sync
     NA->>F: POST /api/v1/users/sync
     Note right of NA: Header: X-Internal-Secret
     F->>DB: INSERT or UPDATE user
@@ -103,7 +103,7 @@ sequenceDiagram
     Note over B,F: 3. Authenticated API Call
     B->>P: POST /api/backend/scanner/scan
     Note right of B: Cookie: next-auth session
-    P->>P: Decode JWE → extract claims
+    P->>P: Decode JWE -> extract claims
     P->>P: Re-sign as HS256 JWT
     Note right of P: JWT_SECRET (shared)
     P->>F: POST /api/v1/scanner/scan
@@ -114,7 +114,7 @@ sequenceDiagram
 
 ---
 
-## Flux du scanner
+## Scanner Flow
 
 ```mermaid
 sequenceDiagram
@@ -128,7 +128,7 @@ sequenceDiagram
     participant DB as PostgreSQL
 
     U->>F: POST /api/v1/scanner/scan {url}
-    F->>F: Verify JWT → user_id, tier
+    F->>F: Verify JWT -> user_id, tier
 
     F->>RL: Check daily usage
     RL->>R: GET scan_count:{user_id}
@@ -141,11 +141,11 @@ sequenceDiagram
     S->>S: validate_url()
     Note right of S: Block private IPs,<br/>localhost, metadata,<br/>non-HTTP schemes
 
-    S->>Web: HTTP GET (timeout 10s)
+    S->>Web: HTTP GET (timeout 15s)
     Web->>S: HTML content
 
     S->>S: sanitize_content()
-    Note right of S: Remove prompt injection<br/>patterns, truncate to 3000 chars
+    Note right of S: Remove prompt injection<br/>patterns, truncate to 4000 chars
 
     S->>C: messages.create()
     Note right of S: System: SCANNER_PROMPT<br/>User: <content_to_analyze>...
@@ -161,7 +161,7 @@ sequenceDiagram
 
 ---
 
-## Flux de paiement Stripe
+## Stripe Payment Flow
 
 ```mermaid
 sequenceDiagram
@@ -174,15 +174,15 @@ sequenceDiagram
     Note over U,S: 1. Checkout
     U->>N: Click "UPGRADE" on /pricing
     N->>F: POST /api/v1/users/checkout?price_id=...
-    F->>F: Validate price_id ∈ [hunter, operator]
+    F->>F: Validate price_id in [hunter, operator]
     F->>S: stripe.checkout.Session.create()
     S->>F: {url: checkout_url}
     F->>N: {checkout_url}
-    N->>U: Redirect → Stripe Checkout
+    N->>U: Redirect -> Stripe Checkout
 
     Note over U,S: 2. Payment
     U->>S: Complete payment on Stripe
-    S->>U: Redirect → /dashboard/success
+    S->>U: Redirect -> /dashboard/success
 
     Note over S,DB: 3. Webhook (async)
     S->>F: POST /api/v1/webhooks/stripe
@@ -196,14 +196,14 @@ sequenceDiagram
 
     Note over U,DB: 4. Session Refresh
     U->>N: Visit /dashboard/success
-    N->>N: session.update() → refresh tier
+    N->>N: session.update() -> refresh tier
     N->>U: "UPGRADE COMPLETE" + countdown
-    N->>U: Redirect → /dashboard
+    N->>U: Redirect -> /dashboard
 ```
 
 ---
 
-## Modèle de données
+## Data Model
 
 ```mermaid
 erDiagram
@@ -220,7 +220,7 @@ erDiagram
 
     SCAN {
         int id PK "Auto-increment"
-        string user_id FK "→ USER.id"
+        string user_id FK "-> USER.id"
         string url "Scanned URL"
         float ai_probability "0.0 - 1.0"
         string verdict "human|mixed|ai_generated"
@@ -232,7 +232,7 @@ erDiagram
 
     SUBSCRIPTION {
         int id PK "Auto-increment"
-        string user_id FK "→ USER.id"
+        string user_id FK "-> USER.id"
         string stripe_subscription_id UK
         string stripe_price_id
         string status "active|canceled|past_due"
@@ -247,11 +247,11 @@ erDiagram
 
 ---
 
-## Structure des routes
+## Route Structure
 
 ```mermaid
 graph LR
-    subgraph Public["Routes publiques"]
+    subgraph Public["Public Routes"]
         LP["/"] -->|Landing| SSR["SSR - page.tsx"]
         PR["/pricing"] -->|Tiers| Client["Client component"]
         LG["/login"] -->|Auth| NextAuth
@@ -259,7 +259,7 @@ graph LR
         PIV["/privacy"] -->|Legal| SSR3["SSR"]
     end
 
-    subgraph Protected["Routes protégées (middleware)"]
+    subgraph Protected["Protected Routes (middleware)"]
         DB["/dashboard"] -->|Stats| Dashboard
         HI["/dashboard/history"] -->|Hunter+| History
         SU["/dashboard/success"] -->|Post-checkout| Success
@@ -285,16 +285,16 @@ graph LR
 
 ---
 
-## Stack de sécurité
+## Security Stack
 
 ```mermaid
 graph TB
-    subgraph Perimeter["Périmètre"]
+    subgraph Perimeter["Perimeter"]
         NGINX["Nginx<br/>Rate limit 30r/s<br/>SSL termination"]
         CSP["CSP Headers<br/>X-Frame-Options<br/>HSTS"]
     end
 
-    subgraph Auth["Authentification"]
+    subgraph Auth["Authentication"]
         OAuth2["OAuth 2.0<br/>Google + GitHub"]
         JWE["JWE Tokens<br/>(NextAuth)"]
         HS256["HS256 JWT<br/>(Backend)"]
@@ -309,9 +309,9 @@ graph TB
         PriceVal["Price ID Validation<br/>Stripe checkout"]
     end
 
-    subgraph Secrets["Gestion des secrets"]
-        EnvVal["Startup Validation<br/>Crash si secrets faibles"]
-        NoDefault["Pas de valeurs par défaut<br/>JWT_SECRET, INTERNAL_API_SECRET"]
+    subgraph Secrets["Secret Management"]
+        EnvVal["Startup Validation<br/>Crash on weak secrets"]
+        NoDefault["No default values<br/>JWT_SECRET, INTERNAL_API_SECRET"]
         CompareDigest["secrets.compare_digest<br/>Timing-safe comparison"]
     end
 
@@ -332,7 +332,7 @@ graph TB
 
 ---
 
-## Composants frontend
+## Frontend Components
 
 ```mermaid
 graph TB
@@ -361,6 +361,7 @@ graph TB
     subgraph UI["UI System"]
         Toast["Toast<br/>Context-based notifications<br/>Auto-dismiss 4s"]
         Skeleton["Skeleton<br/>Loading placeholders<br/>Card, Gauge, Chart, Table"]
+        ErrorBound["ErrorBoundary<br/>Catch render errors<br/>Retry button"]
     end
 
     RootLayout --> Header
@@ -376,11 +377,11 @@ graph TB
 
 ---
 
-## Variables d'environnement
+## Environment Variables
 
 ```mermaid
 graph LR
-    subgraph Required["🔴 Obligatoires"]
+    subgraph Required["Required"]
         JWT["JWT_SECRET<br/>openssl rand -hex 32"]
         INTERNAL["INTERNAL_API_SECRET<br/>openssl rand -hex 32"]
         NEXTAUTH["NEXTAUTH_SECRET<br/>openssl rand -base64 32"]
@@ -393,7 +394,7 @@ graph LR
         GITHUB["GITHUB_CLIENT_ID/SECRET"]
     end
 
-    subgraph Optional["🟡 Optionnelles"]
+    subgraph Optional["Optional"]
         DB_URL["DATABASE_URL<br/>default: docker internal"]
         REDIS["REDIS_URL<br/>default: redis://redis:6379"]
         DEBUG["DEBUG<br/>default: false"]

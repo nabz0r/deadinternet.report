@@ -6,7 +6,7 @@
 
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useSession } from 'next-auth/react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -24,6 +24,9 @@ import MobileNav from '@/components/layout/MobileNav'
 import Footer from '@/components/layout/Footer'
 import { SkeletonGauge, SkeletonCard, SkeletonChart } from '@/components/ui/Skeleton'
 import { useToast } from '@/components/ui/Toast'
+import ErrorBoundary from '@/components/ui/ErrorBoundary'
+
+const LOADING_TIMEOUT_MS = 15000
 
 export default function DashboardPage() {
   const { data: session, status } = useSession()
@@ -31,12 +34,29 @@ export default function DashboardPage() {
   const { toast } = useToast()
   const [stats, setStats] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+  const timeoutRef = useRef<ReturnType<typeof setTimeout>>()
 
   useEffect(() => {
+    timeoutRef.current = setTimeout(() => {
+      setLoading(prev => {
+        if (prev) {
+          toast('Dashboard data is taking longer than expected. Please refresh.', 'error')
+        }
+        return false
+      })
+    }, LOADING_TIMEOUT_MS)
+
     api.getStats()
       .then(setStats)
       .catch(() => toast('Failed to load dashboard data', 'error'))
-      .finally(() => setLoading(false))
+      .finally(() => {
+        setLoading(false)
+        if (timeoutRef.current) clearTimeout(timeoutRef.current)
+      })
+
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current)
+    }
   }, [])
 
   // Show success toast after Stripe redirect
@@ -64,6 +84,7 @@ export default function DashboardPage() {
       <Header />
 
       <main className="max-w-7xl mx-auto px-4 py-6 space-y-6 flex-1 w-full pb-20 md:pb-6">
+        <ErrorBoundary>
         {/* Row 1: Dead Index + Key Stats */}
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 stagger-children">
           <div className="lg:col-span-1">
@@ -159,6 +180,7 @@ export default function DashboardPage() {
             </span>
           </div>
         )}
+        </ErrorBoundary>
       </main>
 
       <TickerTape facts={stats?.ticker_facts || []} />

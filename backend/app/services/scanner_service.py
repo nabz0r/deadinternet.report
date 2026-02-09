@@ -127,7 +127,10 @@ Content to analyze:
 
 
 class ScannerService:
-    """Handles URL fetching and AI analysis."""
+    """Handles URL fetching and AI analysis with result caching."""
+
+    # Cache scan results for 24h to avoid duplicate Claude API calls
+    CACHE_TTL = 86400  # 24 hours
 
     def __init__(self):
         self._client: anthropic.AsyncAnthropic | None = None
@@ -136,7 +139,10 @@ class ScannerService:
     @property
     def client(self) -> anthropic.AsyncAnthropic:
         if not self._client:
-            self._client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+            self._client = anthropic.AsyncAnthropic(
+                api_key=settings.anthropic_api_key,
+                timeout=30.0,  # Timeout for Claude API calls
+            )
         return self._client
 
     @property
@@ -146,9 +152,35 @@ class ScannerService:
                 timeout=15.0,
                 follow_redirects=True,
                 max_redirects=3,
-                headers={"User-Agent": "DeadInternetReport/1.0 (content-analyzer)"},
+                headers={"User-Agent": "Mozilla/5.0 (compatible; ContentAnalyzer/1.0)"},
             )
         return self._http
+
+    def _cache_key(self, url: str) -> str:
+        """Generate cache key for a URL scan result."""
+        import hashlib
+        url_hash = hashlib.sha256(url.encode()).hexdigest()[:16]
+        return f"scan_cache:{url_hash}"
+
+    async def _get_cached_result(self, url: str) -> dict | None:
+        """Check if we have a cached scan result for this URL."""
+        from app.core.redis import redis_client
+        cached = await redis_client.get_cached(self._cache_key(url))
+        if cached:
+            try:
+                return json.loads(cached)
+            except json.JSONDecodeError:
+                return None
+        return None
+
+    async def _cache_result(self, url: str, result: dict):
+        """Cache scan result to avoid duplicate API calls."""
+        from app.core.redis import redis_client
+        await redis_client.set_cached(
+            self._cache_key(url),
+            json.dumps(result),
+            ttl=self.CACHE_TTL,
+        )
 
     async def fetch_content(self, url: str) -> str:
         """Fetch and extract text content from URL (SSRF-safe)."""
@@ -177,7 +209,17 @@ class ScannerService:
         return text[:4000]
 
     async def analyze(self, url: str) -> dict:
-        """Full scan pipeline: fetch URL -> analyze with Claude -> return result."""
+        """Full scan pipeline: fetch URL -> analyze with Claude -> return result.
+
+        Results are cached for 24h per URL to reduce Claude API costs.
+        """
+        # Check cache first
+        cached = await self._get_cached_result(url)
+        if cached:
+            logger.info(f"Cache hit for URL: {url[:80]}")
+            cached["from_cache"] = True
+            return cached
+
         start = time.monotonic()
 
         content = await self.fetch_content(url)
@@ -222,7 +264,7 @@ class ScannerService:
 
         duration_ms = int((time.monotonic() - start) * 1000)
 
-        return {
+        scan_result = {
             "ai_probability": prob,
             "verdict": verdict,
             "analysis": str(result.get("analysis", ""))[:500],
@@ -231,6 +273,11 @@ class ScannerService:
             "tokens_used": message.usage.input_tokens + message.usage.output_tokens,
             "scan_duration_ms": duration_ms,
         }
+
+        # Cache for future requests
+        await self._cache_result(url, scan_result)
+
+        return scan_result
 
 
 scanner_service = ScannerService()
