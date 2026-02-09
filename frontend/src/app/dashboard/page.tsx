@@ -20,28 +20,30 @@ import LiveScanner from '@/components/dashboard/LiveScanner'
 import StatCard from '@/components/dashboard/StatCard'
 import UpgradeBanner from '@/components/dashboard/UpgradeBanner'
 import Header from '@/components/layout/Header'
+import MobileNav from '@/components/layout/MobileNav'
 import Footer from '@/components/layout/Footer'
+import { SkeletonGauge, SkeletonCard, SkeletonChart } from '@/components/ui/Skeleton'
+import { useToast } from '@/components/ui/Toast'
 
 export default function DashboardPage() {
   const { data: session, status } = useSession()
   const searchParams = useSearchParams()
+  const { toast } = useToast()
   const [stats, setStats] = useState<any>(null)
   const [loading, setLoading] = useState(true)
-  const [showUpgradeToast, setShowUpgradeToast] = useState(false)
 
   useEffect(() => {
     api.getStats()
       .then(setStats)
-      .catch(console.error)
+      .catch(() => toast('Failed to load dashboard data', 'error'))
       .finally(() => setLoading(false))
   }, [])
 
   // Show success toast after Stripe redirect
   useEffect(() => {
     if (searchParams.get('upgraded') === 'true') {
-      setShowUpgradeToast(true)
+      toast('Upgrade successful! Your scanner is now active.', 'success')
       window.history.replaceState({}, '', '/dashboard')
-      setTimeout(() => setShowUpgradeToast(false), 5000)
     }
   }, [searchParams])
 
@@ -57,82 +59,81 @@ export default function DashboardPage() {
 
   const userTier = session?.user?.tier || 'ghost'
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-dead-bg">
-        <Header />
-        <div className="flex items-center justify-center" style={{ minHeight: 'calc(100vh - 60px)' }}>
-          <div className="text-center">
-            <div className="inline-block w-8 h-8 border-2 border-dead-accent border-t-transparent rounded-full animate-spin mb-4" />
-            <p className="font-mono text-dead-accent text-sm animate-pulse">
-              [ LOADING DEAD INTERNET DATA... ]
-            </p>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="min-h-screen bg-dead-bg flex flex-col">
       <Header />
 
-      {/* Upgrade success toast */}
-      {showUpgradeToast && (
-        <div className="bg-dead-safe/10 border-b border-dead-safe px-6 py-3 text-center">
-          <p className="font-mono text-dead-safe text-sm">
-            ✓ Upgrade successful! Your scanner is now active.
-          </p>
-        </div>
-      )}
-
-      <main className="max-w-7xl mx-auto px-4 py-6 space-y-6 flex-1 w-full">
+      <main className="max-w-7xl mx-auto px-4 py-6 space-y-6 flex-1 w-full pb-20 md:pb-6">
         {/* Row 1: Dead Index + Key Stats */}
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 stagger-children">
           <div className="lg:col-span-1">
-            <DeadIndexGauge value={stats?.dead_internet_index || 0} />
+            {loading ? (
+              <SkeletonGauge />
+            ) : (
+              <DeadIndexGauge value={stats?.dead_internet_index || 0} />
+            )}
           </div>
           <div className="lg:col-span-3 grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <StatCard
-              label="Bot Traffic"
-              value={stats?.global?.bot_traffic_pct || 0}
-              unit="%"
-              source="Imperva/Thales"
-              color="#ff4444"
-            />
-            <StatCard
-              label="AI New Pages"
-              value={stats?.global?.ai_content_new_pages_pct || 0}
-              unit="%"
-              source="Ahrefs"
-              color="#ffaa00"
-            />
-            <StatCard
-              label="AI Articles"
-              value={stats?.global?.ai_articles_pct || 0}
-              unit="%"
-              source="Graphite"
-              color="#ff6600"
-            />
+            {loading ? (
+              <>
+                <SkeletonCard />
+                <SkeletonCard />
+                <SkeletonCard />
+              </>
+            ) : (
+              <>
+                <StatCard
+                  label="Bot Traffic"
+                  value={stats?.global?.bot_traffic_pct || 0}
+                  unit="%"
+                  source="Imperva/Thales"
+                  color="#ff4444"
+                />
+                <StatCard
+                  label="AI New Pages"
+                  value={stats?.global?.ai_content_new_pages_pct || 0}
+                  unit="%"
+                  source="Ahrefs"
+                  color="#ffaa00"
+                />
+                <StatCard
+                  label="AI Articles"
+                  value={stats?.global?.ai_articles_pct || 0}
+                  unit="%"
+                  source="Graphite"
+                  color="#ff6600"
+                />
+              </>
+            )}
           </div>
         </div>
 
         {/* Row 2: Timeline + Platform Breakdown */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <div className="lg:col-span-2">
-            <TimelineChart data={stats?.timeline || []} />
+          <div className="lg:col-span-2 animate-fade-in animate-fade-in-delay-3">
+            {loading ? (
+              <SkeletonChart />
+            ) : (
+              <TimelineChart data={stats?.timeline || []} />
+            )}
           </div>
-          <div className="lg:col-span-1">
-            <PlatformBreakdown platforms={stats?.platforms || {}} />
+          <div className="lg:col-span-1 animate-fade-in animate-fade-in-delay-4">
+            {loading ? (
+              <SkeletonCard className="h-full" />
+            ) : (
+              <PlatformBreakdown platforms={stats?.platforms || {}} />
+            )}
           </div>
         </div>
 
         {/* Row 3: Scanner (premium) or Upgrade CTA */}
-        {hasFeature(userTier, 'hunter') ? (
-          <LiveScanner />
-        ) : (
-          <UpgradeBanner />
-        )}
+        <div className="animate-fade-in animate-fade-in-delay-5">
+          {hasFeature(userTier, 'hunter') ? (
+            <LiveScanner />
+          ) : (
+            <UpgradeBanner />
+          )}
+        </div>
 
         {/* Quick links for premium users */}
         {hasFeature(userTier, 'hunter') && (
@@ -142,7 +143,7 @@ export default function DashboardPage() {
                 href="/dashboard/history"
                 className="font-mono text-xs text-dead-dim hover:text-dead-accent transition-colors"
               >
-                📋 Scan History
+                ◈ Scan History
               </Link>
               <a
                 href="/docs"
@@ -150,10 +151,10 @@ export default function DashboardPage() {
                 rel="noopener noreferrer"
                 className="font-mono text-xs text-dead-dim hover:text-dead-accent transition-colors"
               >
-                📖 API Docs
+                ◉ API Docs
               </a>
             </div>
-            <span className="font-mono text-dead-muted text-xs">
+            <span className="font-mono text-dead-muted text-xs hidden sm:inline">
               Last updated: {stats?.last_updated || 'loading'}
             </span>
           </div>
@@ -162,6 +163,7 @@ export default function DashboardPage() {
 
       <TickerTape facts={stats?.ticker_facts || []} />
       <Footer />
+      <MobileNav />
     </div>
   )
 }
