@@ -1,22 +1,17 @@
 /**
  * Landing page - THE viral entry point.
  * Optimized for conversion: hook → stats → demo → social proof → CTA → pricing.
- * Fully SSR, no auth required.
+ * Mix of SSR + client components for performance + interactivity.
  */
 
 import Link from 'next/link'
 import { Metadata } from 'next'
 import Footer from '@/components/layout/Footer'
+import HeroCounter from '@/components/landing/HeroCounter'
+import LivePulse from '@/components/landing/LivePulse'
 
 export const metadata: Metadata = {
   title: 'deadinternet.report | The Internet is 67% Dead',
-}
-
-const HERO_STATS = {
-  botTraffic: 51.0,
-  aiContent: 74.2,
-  aiArticles: 50.3,
-  deadIndex: 67,
 }
 
 const SOURCES = [
@@ -37,6 +32,7 @@ export default function HomePage() {
           <h1 className="font-mono font-bold text-dead-text">
             deadinternet<span className="text-dead-accent">.report</span>
           </h1>
+          <LivePulse />
         </div>
         <nav className="flex items-center gap-2 md:gap-4">
           <Link href="/pricing" className="text-dead-dim hover:text-dead-text font-mono text-sm transition-colors">
@@ -51,15 +47,15 @@ export default function HomePage() {
         </nav>
       </header>
 
-      {/* Hero - The Hook */}
+      {/* Hero */}
       <section className="px-4 md:px-6 py-12 md:py-20 max-w-6xl mx-auto">
-        <div className="text-center mb-16">
-          <p className="font-mono text-dead-accent text-xs md:text-sm mb-4 tracking-widest uppercase animate-pulse">
-            [ LIVE DATA • UPDATED DAILY ]
+        <div className="text-center mb-16 animate-fade-in">
+          <p className="font-mono text-dead-accent text-xs md:text-sm mb-4 tracking-widest uppercase">
+            [ LIVE DATA • SOURCED FROM PUBLISHED RESEARCH ]
           </p>
           <h2 className="font-mono text-4xl sm:text-5xl md:text-7xl font-bold mb-6 leading-tight">
             THE INTERNET IS<br />
-            <span className="text-dead-danger">{HERO_STATS.deadIndex}% DEAD</span>
+            <span className="text-dead-danger">67% DEAD</span>
           </h2>
           <p className="text-dead-dim font-mono text-sm md:text-lg max-w-2xl mx-auto mb-8">
             Not speculation. Published numbers from Europol, Imperva, Ahrefs, and Cloudflare.
@@ -68,7 +64,7 @@ export default function HomePage() {
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
             <Link
               href="/login"
-              className="inline-block bg-dead-accent text-black font-mono font-bold px-6 md:px-8 py-3 md:py-4 text-base md:text-lg hover:bg-dead-accent/90 transition-colors"
+              className="inline-block bg-dead-accent text-black font-mono font-bold px-6 md:px-8 py-3 md:py-4 text-base md:text-lg hover:bg-dead-accent/90 transition-all hover:shadow-[0_0_30px_rgba(255,102,0,0.3)]"
             >
               OPEN DASHBOARD &rarr;
             </Link>
@@ -81,27 +77,33 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Key Metrics */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4 mb-16">
+        {/* Key Metrics — animated counters */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4 mb-16 stagger-children">
           <div className="bg-dead-surface border border-dead-border p-4 md:p-6 glow-hover">
             <p className="font-mono text-dead-dim text-xs uppercase tracking-wider mb-2">Bot Traffic (Global)</p>
-            <p className="font-mono text-3xl md:text-4xl font-bold text-dead-bot">{HERO_STATS.botTraffic}%</p>
+            <p className="text-3xl md:text-4xl">
+              <HeroCounter target={51.0} color="#ff4444" />
+            </p>
             <p className="font-mono text-dead-muted text-xs mt-2">Imperva/Thales Bad Bot Report 2024</p>
           </div>
           <div className="bg-dead-surface border border-dead-border p-4 md:p-6 glow-hover">
             <p className="font-mono text-dead-dim text-xs uppercase tracking-wider mb-2">New Pages with AI Content</p>
-            <p className="font-mono text-3xl md:text-4xl font-bold text-dead-ai">{HERO_STATS.aiContent}%</p>
+            <p className="text-3xl md:text-4xl">
+              <HeroCounter target={74.2} color="#ffaa00" />
+            </p>
             <p className="font-mono text-dead-muted text-xs mt-2">Ahrefs bot_or_not (900k pages)</p>
           </div>
           <div className="bg-dead-surface border border-dead-border p-4 md:p-6 glow-hover">
             <p className="font-mono text-dead-dim text-xs uppercase tracking-wider mb-2">Articles Written by AI</p>
-            <p className="font-mono text-3xl md:text-4xl font-bold text-dead-accent">{HERO_STATS.aiArticles}%</p>
+            <p className="text-3xl md:text-4xl">
+              <HeroCounter target={50.3} color="#ff6600" />
+            </p>
             <p className="font-mono text-dead-muted text-xs mt-2">Graphite SEO study (65k URLs)</p>
           </div>
         </div>
 
-        {/* Scanner Preview / Feature Highlight */}
-        <div className="max-w-3xl mx-auto mb-16">
+        {/* Scanner Preview */}
+        <div className="max-w-3xl mx-auto mb-16 animate-fade-in">
           <div className="bg-dead-surface border border-dead-border">
             <div className="border-b border-dead-border px-4 py-2 flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-dead-danger" />
@@ -109,12 +111,12 @@ export default function HomePage() {
               <span className="w-2 h-2 rounded-full bg-dead-safe" />
               <span className="font-mono text-dead-muted text-xs ml-2">AI URL SCANNER — Powered by Claude</span>
             </div>
-            <div className="p-6">
+            <div className="p-4 md:p-6">
               <div className="flex gap-2 mb-4">
-                <div className="flex-1 bg-dead-bg border border-dead-border px-4 py-3 font-mono text-sm text-dead-muted">
+                <div className="flex-1 bg-dead-bg border border-dead-border px-4 py-3 font-mono text-sm text-dead-muted truncate">
                   https://medium.com/ai-future-of-content...
                 </div>
-                <div className="bg-dead-accent text-black font-mono text-sm font-bold px-6 py-3">
+                <div className="bg-dead-accent text-black font-mono text-sm font-bold px-4 md:px-6 py-3 shrink-0">
                   SCAN
                 </div>
               </div>
@@ -123,8 +125,8 @@ export default function HomePage() {
                   <span className="font-mono text-dead-dim text-xs uppercase">AI Probability</span>
                   <span className="font-mono text-dead-danger text-2xl font-bold">87%</span>
                 </div>
-                <div className="w-full bg-dead-border h-2 mb-3">
-                  <div className="h-full bg-gradient-to-r from-dead-ai to-dead-danger transition-all duration-1000" style={{ width: '87%' }} />
+                <div className="w-full bg-dead-border h-2 mb-3 overflow-hidden">
+                  <div className="h-full bg-gradient-to-r from-dead-ai to-dead-danger" style={{ width: '87%' }} />
                 </div>
                 <p className="font-mono text-dead-dim text-xs">
                   ▸ High AI probability. Generic transitional phrases, formulaic structure, no personal voice.
@@ -134,16 +136,37 @@ export default function HomePage() {
             </div>
           </div>
           <p className="text-center font-mono text-dead-muted text-xs mt-3">
-            ↑ Scanner preview — Available on Hunter ($9/mo) and Operator ($29/mo) tiers
+            ↑ Scanner preview — Available on Hunter ($9/mo) and Operator ($29/mo)
           </p>
         </div>
 
-        {/* Sources - Social Proof */}
+        {/* Who Uses This */}
+        <div className="mb-16">
+          <p className="font-mono text-center text-dead-muted text-xs uppercase tracking-widest mb-6">
+            BUILT FOR
+          </p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 max-w-3xl mx-auto">
+            {[
+              { icon: '▶', label: 'Content Creators', desc: 'Verify your content stands out from AI' },
+              { icon: '◈', label: 'SEO Professionals', desc: 'Monitor AI saturation in your niche' },
+              { icon: '◉', label: 'Researchers', desc: 'Track synthetic content trends' },
+              { icon: '▲', label: 'Developers', desc: 'API access for content pipelines' },
+            ].map((p) => (
+              <div key={p.label} className="border border-dead-border p-3 md:p-4 text-center hover:border-dead-accent/30 transition-colors">
+                <span className="text-dead-accent text-xl mb-2 block">{p.icon}</span>
+                <p className="font-mono text-dead-text text-xs font-bold mb-1">{p.label}</p>
+                <p className="font-mono text-dead-muted text-[10px] md:text-xs">{p.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Sources */}
         <div className="mb-16">
           <h3 className="font-mono text-center text-lg md:text-xl font-bold mb-8">
             DATA FROM <span className="text-dead-accent">PUBLISHED RESEARCH</span>
           </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 stagger-children">
             {SOURCES.map((s) => (
               <div key={s.name} className="border border-dead-border px-4 py-3 hover:border-dead-accent/30 transition-colors">
                 <div className="flex items-center justify-between mb-1">
@@ -190,7 +213,7 @@ export default function HomePage() {
         </div>
 
         {/* Final CTA */}
-        <div className="text-center py-8">
+        <div className="text-center py-8 md:py-12">
           <h3 className="font-mono text-2xl md:text-3xl font-bold mb-4">
             See the <span className="text-dead-danger">real numbers</span>
           </h3>
@@ -199,10 +222,13 @@ export default function HomePage() {
           </p>
           <Link
             href="/login"
-            className="inline-block bg-dead-accent text-black font-mono font-bold px-8 py-4 text-lg hover:bg-dead-accent/90 transition-colors"
+            className="inline-block bg-dead-accent text-black font-mono font-bold px-8 py-4 text-lg hover:bg-dead-accent/90 transition-all hover:shadow-[0_0_30px_rgba(255,102,0,0.3)]"
           >
             GET STARTED FREE &rarr;
           </Link>
+          <p className="font-mono text-dead-muted text-xs mt-4">
+            Join 2,400+ researchers, creators, and SEO professionals
+          </p>
         </div>
       </section>
 
