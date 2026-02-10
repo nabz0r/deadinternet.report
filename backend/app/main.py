@@ -67,5 +67,29 @@ app.include_router(webhooks.router, prefix="/api/v1/webhooks", tags=["webhooks"]
 
 @app.get("/health")
 async def health_check():
-    """Health check for Docker and load balancers."""
-    return {"status": "alive", "service": "deadinternet-api"}
+    """Health check for Docker and load balancers. Verifies DB + Redis."""
+    checks = {"service": "deadinternet-api"}
+
+    # Check database
+    try:
+        from sqlalchemy import text
+        from app.core.database import get_db_direct
+        async with get_db_direct() as db:
+            await db.execute(text("SELECT 1"))
+        checks["database"] = "ok"
+    except Exception:
+        checks["database"] = "error"
+
+    # Check Redis
+    try:
+        pong = await redis_client.ping()
+        checks["redis"] = "ok" if pong else "error"
+    except Exception:
+        checks["redis"] = "error"
+
+    all_ok = checks.get("database") == "ok" and checks.get("redis") == "ok"
+    checks["status"] = "healthy" if all_ok else "degraded"
+
+    from fastapi.responses import JSONResponse
+    status_code = 200 if all_ok else 503
+    return JSONResponse(content=checks, status_code=status_code)

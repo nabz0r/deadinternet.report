@@ -6,7 +6,7 @@ GET  /api/v1/scanner/usage   -> Current scan usage
 GET  /api/v1/scanner/history  -> Scan history (requires Hunter+)
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
@@ -65,8 +65,8 @@ async def get_usage(user: dict = Depends(require_auth)):
 
 @router.get("/history")
 async def get_history(
-    limit: int = 20,
-    offset: int = 0,
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
     user: dict = Depends(require_tier("hunter")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -75,7 +75,7 @@ async def get_history(
         select(Scan)
         .where(Scan.user_id == user["id"])
         .order_by(Scan.created_at.desc())
-        .limit(min(limit, 100))
+        .limit(limit)
         .offset(offset)
     )
     scans = result.scalars().all()

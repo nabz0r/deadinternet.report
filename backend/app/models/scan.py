@@ -5,7 +5,7 @@ Keeps history for premium users and analytics.
 
 import uuid
 from datetime import datetime
-from sqlalchemy import String, Float, Text, DateTime, ForeignKey, func
+from sqlalchemy import String, Float, Text, DateTime, ForeignKey, Index, CheckConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -13,6 +13,11 @@ from app.core.database import Base
 
 class Scan(Base):
     __tablename__ = "scans"
+    __table_args__ = (
+        CheckConstraint("verdict IN ('human', 'mixed', 'ai_generated')", name="ck_scan_verdict"),
+        CheckConstraint("ai_probability >= 0.0 AND ai_probability <= 1.0", name="ck_scan_probability"),
+        Index("ix_scans_url", "url"),
+    )
 
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())

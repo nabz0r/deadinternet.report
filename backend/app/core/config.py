@@ -57,6 +57,10 @@ class Settings(BaseSettings):
     scan_rate_hunter: int = 10
     scan_rate_operator: int = 1000
 
+    # IP rate limiting
+    ip_rate_limit: int = 60  # requests per window
+    ip_rate_window: int = 60  # seconds
+
     # Cache TTL (seconds)
     stats_cache_ttl: int = 3600  # 1 hour
 

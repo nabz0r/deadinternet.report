@@ -10,11 +10,13 @@ import logging
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from app.core.config import settings
+
 logger = logging.getLogger(__name__)
 
-# Limits: requests per window
-IP_RATE_LIMIT = 60  # requests
-IP_RATE_WINDOW = 60  # seconds (1 minute)
+# Limits: configurable via env vars IP_RATE_LIMIT / IP_RATE_WINDOW
+IP_RATE_LIMIT = settings.ip_rate_limit
+IP_RATE_WINDOW = settings.ip_rate_window
 
 
 class IPRateLimitMiddleware(BaseHTTPMiddleware):

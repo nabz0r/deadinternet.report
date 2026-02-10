@@ -12,10 +12,12 @@ from app.core.config import settings
 
 @pytest.mark.asyncio
 async def test_health_check_no_auth(client):
-    """Health check is always public."""
+    """Health check is always public. Returns 200 (healthy) or 503 (degraded)."""
     response = await client.get("/health")
-    assert response.status_code == 200
-    assert response.json()["status"] == "alive"
+    assert response.status_code in (200, 503)
+    data = response.json()
+    assert data["service"] == "deadinternet-api"
+    assert data["status"] in ("healthy", "degraded")
 
 
 @pytest.mark.asyncio

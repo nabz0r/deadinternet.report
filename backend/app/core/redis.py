@@ -37,6 +37,10 @@ class RedisClient:
         """Set value with TTL."""
         await self.client.setex(key, ttl, value)
 
+    async def ping(self) -> bool:
+        """Check Redis connectivity."""
+        return await self.client.ping()
+
     async def increment_daily(self, key: str) -> int:
         """Increment a daily counter. Expires at midnight UTC."""
         pipe = self.client.pipeline()

@@ -5,7 +5,7 @@ Synced via Stripe webhooks.
 
 import uuid
 from datetime import datetime
-from sqlalchemy import String, DateTime, ForeignKey, func
+from sqlalchemy import String, DateTime, ForeignKey, CheckConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -13,6 +13,10 @@ from app.core.database import Base
 
 class Subscription(Base):
     __tablename__ = "subscriptions"
+    __table_args__ = (
+        CheckConstraint("status IN ('active', 'canceled', 'past_due', 'trialing')", name="ck_sub_status"),
+        CheckConstraint("tier IN ('hunter', 'operator')", name="ck_sub_tier"),
+    )
 
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())

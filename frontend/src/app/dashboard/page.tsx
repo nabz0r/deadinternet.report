@@ -7,6 +7,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import dynamic from 'next/dynamic'
 import { useSession } from 'next-auth/react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -15,14 +16,16 @@ import type { DashboardStats } from '@/types/api'
 import { hasFeature } from '@/lib/constants'
 import DeadIndexGauge from '@/components/dashboard/DeadIndexGauge'
 import PlatformBreakdown from '@/components/dashboard/PlatformBreakdown'
-import TimelineChart from '@/components/dashboard/TimelineChart'
-import TickerTape from '@/components/dashboard/TickerTape'
-import LiveScanner from '@/components/dashboard/LiveScanner'
 import StatCard from '@/components/dashboard/StatCard'
-import UpgradeBanner from '@/components/dashboard/UpgradeBanner'
 import Header from '@/components/layout/Header'
 import MobileNav from '@/components/layout/MobileNav'
 import Footer from '@/components/layout/Footer'
+
+// Lazy-load heavy components (Recharts, Claude scanner)
+const TimelineChart = dynamic(() => import('@/components/dashboard/TimelineChart'), { ssr: false })
+const LiveScanner = dynamic(() => import('@/components/dashboard/LiveScanner'), { ssr: false })
+const UpgradeBanner = dynamic(() => import('@/components/dashboard/UpgradeBanner'))
+const TickerTape = dynamic(() => import('@/components/dashboard/TickerTape'))
 import { SkeletonGauge, SkeletonCard, SkeletonChart } from '@/components/ui/Skeleton'
 import { useToast } from '@/components/ui/Toast'
 import ErrorBoundary from '@/components/ui/ErrorBoundary'

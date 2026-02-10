@@ -29,6 +29,18 @@ class Base(DeclarativeBase):
     pass
 
 
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def get_db_direct():
+    """Context manager: yields an async DB session (non-dependency use)."""
+    async with async_session() as session:
+        try:
+            yield session
+        finally:
+            await session.close()
+
+
 async def get_db() -> AsyncSession:
     """Dependency: yields an async DB session."""
     async with async_session() as session:
