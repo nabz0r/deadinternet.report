@@ -14,7 +14,7 @@ from app.core.database import Base
 class Subscription(Base):
     __tablename__ = "subscriptions"
     __table_args__ = (
-        CheckConstraint("status IN ('active', 'canceled', 'past_due', 'trialing')", name="ck_sub_status"),
+        CheckConstraint("status IN ('active', 'canceled', 'past_due', 'trialing', 'incomplete', 'incomplete_expired')", name="ck_sub_status"),
         CheckConstraint("tier IN ('hunter', 'operator')", name="ck_sub_tier"),
     )
 
@@ -22,10 +22,10 @@ class Subscription(Base):
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     user_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("users.id"), unique=True, index=True
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), unique=True, index=True
     )
     stripe_subscription_id: Mapped[str] = mapped_column(String(255), unique=True)
-    stripe_price_id: Mapped[str] = mapped_column(String(255))
+    stripe_price_id: Mapped[str] = mapped_column(String(255), index=True)
 
     # State
     status: Mapped[str] = mapped_column(String(20))  # active|canceled|past_due|trialing

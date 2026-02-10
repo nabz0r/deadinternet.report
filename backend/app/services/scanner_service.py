@@ -129,9 +129,6 @@ Content to analyze:
 class ScannerService:
     """Handles URL fetching and AI analysis with result caching."""
 
-    # Cache scan results for 24h to avoid duplicate Claude API calls
-    CACHE_TTL = 86400  # 24 hours
-
     def __init__(self):
         self._client: anthropic.AsyncAnthropic | None = None
         self._http: httpx.AsyncClient | None = None
@@ -179,7 +176,7 @@ class ScannerService:
         await redis_client.set_cached(
             self._cache_key(url),
             json.dumps(result),
-            ttl=self.CACHE_TTL,
+            ttl=settings.scan_cache_ttl,
         )
 
     async def fetch_content(self, url: str) -> str:

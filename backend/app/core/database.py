@@ -3,6 +3,7 @@ Async SQLAlchemy setup with PostgreSQL.
 Uses asyncpg driver for non-blocking DB operations.
 """
 
+from contextlib import asynccontextmanager
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
 
@@ -14,6 +15,8 @@ engine = create_async_engine(
     echo=settings.debug,
     pool_size=20,
     max_overflow=10,
+    pool_pre_ping=True,      # Detect stale connections before use
+    pool_recycle=3600,        # Recycle connections after 1 hour
 )
 
 # Session factory
@@ -28,8 +31,6 @@ class Base(DeclarativeBase):
     """Base class for all SQLAlchemy models."""
     pass
 
-
-from contextlib import asynccontextmanager
 
 @asynccontextmanager
 async def get_db_direct():

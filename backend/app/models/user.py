@@ -26,7 +26,7 @@ class User(Base):
 
     # Subscription
     tier: Mapped[str] = mapped_column(String(20), default="ghost")  # ghost|hunter|operator
-    stripe_customer_id: Mapped[str | None] = mapped_column(String(255))
+    stripe_customer_id: Mapped[str | None] = mapped_column(String(255), index=True)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
@@ -37,8 +37,12 @@ class User(Base):
     )
 
     # Relations
-    scans: Mapped[list["Scan"]] = relationship(back_populates="user")
-    subscription: Mapped["Subscription | None"] = relationship(back_populates="user")
+    scans: Mapped[list["Scan"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    subscription: Mapped["Subscription | None"] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
 
     def __repr__(self):
         return f"<User {self.email} [{self.tier}]>"
