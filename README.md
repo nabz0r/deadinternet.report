@@ -4,6 +4,8 @@
 > Bloomberg Terminal aesthetic meets Dead Internet Theory — backed by real data.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![CI](https://img.shields.io/badge/CI-GitHub_Actions-2088FF.svg)](.github/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/Tests-42_passing-brightgreen.svg)](backend/tests/)
 [![Docker](https://img.shields.io/badge/Docker-ready-blue.svg)](https://www.docker.com/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.110-009688.svg)](https://fastapi.tiangolo.com/)
 [![Next.js](https://img.shields.io/badge/Next.js-14-black.svg)](https://nextjs.org/)
@@ -94,11 +96,40 @@ The proxy at `/api/backend/[...path]` handles this transparently. The shared sec
 | Auth | NextAuth.js v4 | Google/GitHub SSO, JWT sessions |
 | Backend | FastAPI (async Python) | REST API, business logic |
 | Database | PostgreSQL 16 | Users, scans, subscriptions |
-| Cache | Redis 7 | Rate limiting, stats cache |
+| Cache | Redis 7 | Rate limiting, stats cache, scan result cache |
 | AI Scanner | Claude API (Anthropic) | URL content analysis |
 | Payments | Stripe | Subscription management |
-| Proxy | Nginx | SSL, routing, rate limiting |
+| Proxy | Nginx | TLS termination, routing, rate limiting |
+| CI/CD | GitHub Actions | Lint, test, build on every push |
 | Deploy | Docker Compose | One-command orchestration |
+
+---
+
+## Testing
+
+The backend has a comprehensive test suite (42 tests) covering security, API, rate limiting, and scanner logic. Tests use async SQLite and FakeRedis — no external services required.
+
+```bash
+cd backend
+pip install -r requirements-test.txt
+JWT_SECRET=test-secret INTERNAL_API_SECRET=test-secret python -m pytest tests/ -v
+```
+
+### What's tested
+
+| Suite | Tests | Covers |
+|-------|-------|--------|
+| `test_security.py` | 10 | JWT auth, tier enforcement, token edge cases, health check |
+| `test_scanner_service.py` | 24 | SSRF protection (IP ranges, DNS), prompt injection filtering |
+| `test_stats_api.py` | 5 | Public stats endpoints, Redis caching |
+| `test_rate_limiter.py` | 5 | Per-tier scan limits, ghost tier blocking |
+
+### CI/CD
+
+GitHub Actions runs on every push (`.github/workflows/ci.yml`):
+1. **Backend** — lint with ruff, run full pytest suite
+2. **Frontend** — lint with ESLint, production build
+3. **Docker** — verify docker compose builds cleanly
 
 ---
 
@@ -120,18 +151,67 @@ A comprehensive security audit was performed on Feb 8, 2026 — see **[docs/Secu
 
 Additionally fixed: proxy path whitelist (E4), CSP headers (E5), JWT_SECRET separation (E10).
 
+### Additional hardening
+
+- **CSP** — `unsafe-eval` removed from Content-Security-Policy; `X-Powered-By` header disabled
+- **Nginx** — HTTPS redirect, TLS 1.2+, security headers (HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy)
+- **Docker Compose** — Redis password authentication enabled
+- **IP rate limiting** — 60 req/min per IP at application level (configurable via `IP_RATE_LIMIT` / `IP_RATE_WINDOW`)
+- **Stripe idempotency** — checkout sessions use idempotency keys; webhooks deduplicated via Redis (48h TTL)
+- **Webhook error handling** — internal errors logged, never exposed to Stripe
+
+---
+
+## Database
+
+### Models
+
+| Table | Key fields | Constraints |
+|-------|-----------|-------------|
+| `users` | email (unique), tier, stripe_customer_id | `CHECK tier IN (ghost, hunter, operator)` |
+| `scans` | user_id (FK CASCADE), url, ai_probability, verdict | `CHECK verdict IN (human, mixed, ai_generated)`, `CHECK ai_probability 0.0-1.0` |
+| `subscriptions` | user_id (FK CASCADE, unique), stripe_subscription_id, status, tier | `CHECK status IN (active, canceled, past_due, trialing, incomplete, incomplete_expired)` |
+
+### Indexes
+
+- `users.email` (unique), `users.stripe_customer_id`
+- `scans.user_id`, `scans.url`, `scans(user_id, created_at)` composite for history queries
+- `subscriptions.user_id` (unique), `subscriptions.stripe_subscription_id` (unique), `subscriptions.stripe_price_id`
+
+### Connection pool
+
+- `pool_size=20`, `max_overflow=10`
+- `pool_pre_ping=True` — detects stale connections before use
+- `pool_recycle=3600` — recycles connections after 1 hour
+
+### Cascade behavior
+
+Deleting a user automatically deletes all associated scans and subscription records, both at the ORM level (`cascade="all, delete-orphan"`) and at the database level (`ON DELETE CASCADE`).
+
+### Migrations
+
+Alembic manages schema migrations. The initial migration (`001_initial_schema`) is included.
+
+```bash
+# Apply migrations
+docker compose exec backend alembic upgrade head
+
+# Create a new migration after model changes
+docker compose exec backend alembic revision --autogenerate -m "description"
+```
+
 ---
 
 ## Configuration
 
 Copy `.env.example` to `.env` and fill in your values.
 
-### Required secrets (⚠️ generate these!)
+### Required secrets (generate these!)
 
 ```bash
 # These are MANDATORY — the app will crash without them
 JWT_SECRET=$(openssl rand -hex 32)              # Backend JWT signing
-INTERNAL_API_SECRET=$(openssl rand -hex 32)     # Frontend ↔ Backend internal auth
+INTERNAL_API_SECRET=$(openssl rand -hex 32)     # Frontend <-> Backend internal auth
 NEXTAUTH_SECRET=$(openssl rand -base64 32)      # NextAuth session encryption
 ```
 
@@ -155,8 +235,13 @@ NEXTAUTH_SECRET=$(openssl rand -base64 32)      # NextAuth session encryption
 |----------|---------|-------------|
 | `POSTGRES_USER` | `deadinet` | DB username |
 | `POSTGRES_PASSWORD` | `deadinet` | DB password (**change in prod**) |
+| `REDIS_PASSWORD` | `changeme` | Redis password (**change in prod**) |
 | `NEXTAUTH_URL` | `http://localhost:3000` | Public frontend URL |
-| `DEBUG` | `false` | Enables `/docs` endpoint |
+| `DEBUG` | `false` | Enables `/docs` and `/redoc` endpoints |
+| `IP_RATE_LIMIT` | `60` | Max requests per IP per window |
+| `IP_RATE_WINDOW` | `60` | Rate limit window in seconds |
+| `SCAN_CACHE_TTL` | `86400` | Scan result cache duration (seconds) |
+| `STATS_CACHE_TTL` | `3600` | Dashboard stats cache duration (seconds) |
 
 ---
 
@@ -186,22 +271,35 @@ GET  /api/v1/stats/platforms  → Platform breakdown
 GET  /api/v1/stats/timeline   → Historical data 2014-2026
 GET  /api/v1/stats/ticker     → Ticker tape facts
 GET  /api/v1/stats/index      → Dead Internet Index
-GET  /health                  → Health check
+GET  /health                  → Deep health check (DB + Redis)
 ```
 
 ### Authenticated (Hunter+)
 ```
 POST /api/v1/scanner/scan     → Analyze a URL
 GET  /api/v1/scanner/usage    → Daily scan usage
-GET  /api/v1/scanner/history  → Scan history
+GET  /api/v1/scanner/history  → Scan history (paginated, validated)
 ```
 
 ### User management
 ```
 GET  /api/v1/users/me         → Profile
 POST /api/v1/users/sync       → Internal: sync from NextAuth
-POST /api/v1/users/checkout   → Stripe checkout
+POST /api/v1/users/checkout   → Stripe checkout (idempotent)
 POST /api/v1/users/portal     → Billing portal
+```
+
+### Health check
+
+`GET /health` verifies database and Redis connectivity. Returns `200` when healthy, `503` when degraded:
+
+```json
+{
+  "service": "deadinternet-api",
+  "database": "ok",
+  "redis": "ok",
+  "status": "healthy"
+}
 ```
 
 ---
@@ -212,6 +310,9 @@ POST /api/v1/users/portal     → Billing portal
 .
 ├── docker-compose.yml
 ├── .env.example
+├── .github/
+│   └── workflows/
+│       └── ci.yml              # ← CI: lint, test, build, docker
 ├── docs/
 │   ├── ARCHITECTURE.md         # ← Mermaid diagrams, flow charts
 │   ├── Security.md             # ← Audit report + fix status
@@ -223,8 +324,8 @@ POST /api/v1/users/portal     → Billing portal
 │       ├── app/
 │       │   ├── page.tsx            # Landing (SSR)
 │       │   ├── login/              # Google/GitHub SSO
-│       │   ├── pricing/            # Tier comparison
-│       │   ├── dashboard/          # Main dashboard
+│       │   ├── pricing/            # Tier comparison + SEO metadata
+│       │   ├── dashboard/          # Main dashboard (lazy-loaded)
 │       │   │   ├── history/        # Scan history (Hunter+)
 │       │   │   └── success/        # Post-checkout
 │       │   └── api/
@@ -234,30 +335,45 @@ POST /api/v1/users/portal     → Billing portal
 │       │   ├── layout/             # Header, Footer, MobileNav
 │       │   ├── dashboard/          # Gauge, Charts, Scanner, etc.
 │       │   ├── landing/            # HeroCounter, LivePulse
-│       │   └── ui/                 # Toast, Skeleton
-│       └── lib/
-│           ├── auth.ts             # NextAuth config
-│           ├── api-client.ts       # API client
-│           └── constants.ts        # Tier definitions
+│       │   └── ui/                 # Toast, Skeleton, ErrorBoundary
+│       ├── lib/
+│       │   ├── auth.ts             # NextAuth config
+│       │   ├── api-client.ts       # Type-safe API client
+│       │   └── constants.ts        # Tier definitions
+│       └── types/
+│           ├── api.ts              # API response type definitions
+│           └── next-auth.d.ts      # NextAuth type augmentation
 │
 ├── backend/                    # FastAPI
+│   ├── tests/                  # pytest test suite (42 tests)
+│   │   ├── conftest.py             # Async fixtures, FakeRedis
+│   │   ├── test_security.py        # JWT, auth, tier enforcement
+│   │   ├── test_scanner_service.py # SSRF, prompt injection
+│   │   ├── test_stats_api.py       # Stats endpoints
+│   │   └── test_rate_limiter.py    # Scan rate limits
+│   ├── alembic/
+│   │   └── versions/
+│   │       └── 001_initial_schema.py  # ← Initial migration
 │   └── app/
 │       ├── core/
 │       │   ├── config.py           # Settings + secret validation
 │       │   ├── security.py         # JWT decode + auth
-│       │   ├── database.py         # Async SQLAlchemy
+│       │   ├── database.py         # Async SQLAlchemy + pool config
+│       │   ├── redis.py            # Redis client wrapper
 │       │   └── rate_limiter.py     # Per-user scan limits
+│       ├── middleware/
+│       │   └── ip_rate_limit.py    # IP-based rate limiting
 │       ├── services/
-│       │   ├── scanner_service.py  # SSRF protection + Claude
-│       │   ├── stats_service.py    # Cached stats
-│       │   └── stripe_service.py   # Checkout + webhooks
+│       │   ├── scanner_service.py  # SSRF protection + Claude + caching
+│       │   ├── stats_service.py    # Cached stats from research
+│       │   └── stripe_service.py   # Checkout + idempotent webhooks
 │       └── api/v1/
 │           ├── stats.py            # Public endpoints
-│           ├── scanner.py          # Auth + rate limited
+│           ├── scanner.py          # Auth + rate limited + validated
 │           ├── users.py            # Sync + billing
-│           └── webhooks.py         # Stripe receiver
+│           └── webhooks.py         # Stripe receiver (deduped)
 │
-├── nginx/                      # Reverse proxy
+├── nginx/                      # Reverse proxy (HTTPS + security headers)
 └── scripts/                    # Utilities
 ```
 
@@ -276,9 +392,14 @@ docker compose build && docker compose up -d
 # Reset everything
 docker compose down -v && docker compose up -d
 
+# Run backend tests locally
+cd backend
+pip install -r requirements-test.txt
+JWT_SECRET=test-secret INTERNAL_API_SECRET=test-secret python -m pytest tests/ -v
+
 # DB migrations
-docker compose exec backend alembic revision --autogenerate -m "description"
 docker compose exec backend alembic upgrade head
+docker compose exec backend alembic revision --autogenerate -m "description"
 ```
 
 ---
