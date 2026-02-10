@@ -6,7 +6,7 @@
 
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import dynamic from 'next/dynamic'
 import { useSession } from 'next-auth/react'
 import { useSearchParams } from 'next/navigation'
@@ -38,7 +38,26 @@ export default function DashboardPage() {
   const { toast } = useToast()
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [loading, setLoading] = useState(true)
+  const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
   const timeoutRef = useRef<ReturnType<typeof setTimeout>>()
+
+  const fetchStats = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true)
+    else setLoading(true)
+
+    try {
+      const data = await api.getStats()
+      setStats(data)
+      setLastRefreshed(new Date())
+    } catch {
+      toast('Failed to load dashboard data', 'error')
+    } finally {
+      setLoading(false)
+      setRefreshing(false)
+      if (timeoutRef.current) clearTimeout(timeoutRef.current)
+    }
+  }, [toast])
 
   useEffect(() => {
     timeoutRef.current = setTimeout(() => {
@@ -50,13 +69,7 @@ export default function DashboardPage() {
       })
     }, LOADING_TIMEOUT_MS)
 
-    api.getStats()
-      .then(setStats)
-      .catch(() => toast('Failed to load dashboard data', 'error'))
-      .finally(() => {
-        setLoading(false)
-        if (timeoutRef.current) clearTimeout(timeoutRef.current)
-      })
+    fetchStats()
 
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current)
@@ -85,9 +98,12 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-dead-bg flex flex-col">
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:top-2 focus:left-2 bg-dead-accent text-black font-mono text-sm px-4 py-2">
+        Skip to content
+      </a>
       <Header />
 
-      <main className="max-w-7xl mx-auto px-4 py-6 space-y-6 flex-1 w-full pb-20 md:pb-6">
+      <main id="main-content" className="max-w-7xl mx-auto px-4 py-6 space-y-6 flex-1 w-full pb-20 md:pb-6">
         <ErrorBoundary>
         {/* Row 1: Dead Index + Key Stats */}
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 stagger-children">
@@ -160,30 +176,42 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Quick links for premium users */}
-        {hasFeature(userTier, 'hunter') && (
-          <div className="flex items-center justify-between bg-dead-surface border border-dead-border px-4 py-3">
-            <div className="flex items-center gap-4">
-              <Link
-                href="/dashboard/history"
-                className="font-mono text-xs text-dead-dim hover:text-dead-accent transition-colors"
-              >
-                ◈ Scan History
-              </Link>
-              <a
-                href="/docs"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-mono text-xs text-dead-dim hover:text-dead-accent transition-colors"
-              >
-                ◉ API Docs
-              </a>
-            </div>
-            <span className="font-mono text-dead-muted text-xs hidden sm:inline">
-              Last updated: {stats?.last_updated || 'loading'}
-            </span>
+        {/* Status bar */}
+        <div className="flex items-center justify-between bg-dead-surface border border-dead-border px-4 py-3">
+          <div className="flex items-center gap-4">
+            {hasFeature(userTier, 'hunter') && (
+              <>
+                <Link
+                  href="/dashboard/history"
+                  className="font-mono text-xs text-dead-dim hover:text-dead-accent transition-colors"
+                >
+                  ◈ Scan History
+                </Link>
+                <a
+                  href="/docs"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-mono text-xs text-dead-dim hover:text-dead-accent transition-colors"
+                >
+                  ◉ API Docs
+                </a>
+              </>
+            )}
+            <button
+              onClick={() => fetchStats(true)}
+              disabled={refreshing}
+              className="font-mono text-xs text-dead-dim hover:text-dead-accent disabled:opacity-40 transition-colors"
+              aria-label="Refresh dashboard data"
+            >
+              {refreshing ? '↻ Refreshing...' : '↻ Refresh'}
+            </button>
           </div>
-        )}
+          <span className="font-mono text-dead-muted text-xs">
+            {lastRefreshed
+              ? `Updated ${lastRefreshed.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`
+              : 'Loading...'}
+          </span>
+        </div>
         </ErrorBoundary>
       </main>
 

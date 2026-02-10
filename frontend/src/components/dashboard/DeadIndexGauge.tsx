@@ -29,17 +29,25 @@ export default function DeadIndexGauge({ value }: Props) {
     return 'MODERATE'
   }
 
+  const isCritical = pct > 70
   const color = getColor(pct)
   const circumference = 2 * Math.PI * 70
   const offset = circumference - (displayValue / 100) * circumference
 
   return (
-    <div className="bg-dead-surface border border-dead-border p-6 flex flex-col items-center justify-center h-full animate-fade-in">
+    <div
+      className={`bg-dead-surface border border-dead-border p-6 flex flex-col items-center justify-center h-full animate-fade-in ${isCritical ? 'animate-pulse-glow' : ''}`}
+      role="meter"
+      aria-valuenow={pct}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-label={`Dead Internet Index: ${pct}%, status ${getLabel(pct)}`}
+    >
       <p className="font-mono text-dead-dim text-xs uppercase tracking-wider mb-4">
         Dead Internet Index
       </p>
 
-      <div className="relative w-40 h-40">
+      <div className="relative w-32 h-32 sm:w-40 sm:h-40">
         <svg className="w-full h-full -rotate-90" viewBox="0 0 160 160">
           {/* Background circle */}
           <circle
@@ -68,11 +76,11 @@ export default function DeadIndexGauge({ value }: Props) {
             strokeDasharray={circumference}
             strokeDashoffset={offset}
             filter="url(#glow)"
-            style={{ transition: 'stroke-dashoffset 0.1s ease' }}
+            style={{ transition: 'stroke-dashoffset 2.5s ease-out' }}
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="font-mono text-4xl font-bold" style={{ color }}>
+          <span className="font-mono text-3xl sm:text-4xl font-bold" style={{ color }}>
             {pct}%
           </span>
         </div>

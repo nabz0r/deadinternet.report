@@ -9,6 +9,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useSession } from 'next-auth/react'
+import Link from 'next/link'
 
 export default function SuccessPage() {
   const router = useRouter()
@@ -35,8 +36,8 @@ export default function SuccessPage() {
 
   return (
     <main className="min-h-screen bg-dead-bg flex items-center justify-center">
-      <div className="text-center max-w-lg">
-        <div className="text-6xl mb-6">☠️</div>
+      <div className="text-center max-w-lg animate-fade-in">
+        <div className="text-6xl mb-6 animate-scale-in">☠️</div>
         <p className="font-mono text-dead-safe text-sm tracking-widest uppercase mb-4">
           [ UPGRADE COMPLETE ]
         </p>
@@ -46,15 +47,29 @@ export default function SuccessPage() {
         <p className="font-mono text-dead-dim mb-2">
           Your scanner is now active. Start analyzing URLs for AI content.
         </p>
-        <p className="font-mono text-dead-muted text-sm mb-8">
+        <p className="font-mono text-dead-muted text-sm mb-4" aria-live="polite">
           Redirecting to dashboard in {countdown}s...
         </p>
-        <div className="w-full bg-dead-border h-1 overflow-hidden">
+
+        <div
+          className="w-full bg-dead-border h-1 overflow-hidden mb-6"
+          role="progressbar"
+          aria-valuenow={(5 - countdown) * 20}
+          aria-valuemin={0}
+          aria-valuemax={100}
+        >
           <div
             className="h-full bg-dead-accent transition-all duration-1000"
             style={{ width: `${((5 - countdown) / 5) * 100}%` }}
           />
         </div>
+
+        <Link
+          href="/dashboard"
+          className="font-mono text-sm text-dead-dim hover:text-dead-accent transition-colors"
+        >
+          Skip → go to dashboard now
+        </Link>
       </div>
     </main>
   )

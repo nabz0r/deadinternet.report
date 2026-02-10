@@ -2,6 +2,7 @@
  * Timeline Chart - historical evolution of bot traffic and AI content.
  * Uses Recharts for the area/line chart.
  * Shows the dramatic hockey-stick curve post-ChatGPT.
+ * Projected data (2026) shown with dashed dot markers.
  */
 
 'use client'
@@ -36,9 +37,14 @@ interface CustomTooltipProps {
 
 const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
   if (!active || !payload) return null
+
+  const isProjected = label === 2026
+
   return (
     <div className="bg-dead-surface border border-dead-border p-3 font-mono text-xs">
-      <p className="text-dead-text font-bold mb-1">{label}</p>
+      <p className="text-dead-text font-bold mb-1">
+        {label}{isProjected && ' (projected)'}
+      </p>
       {payload.map((p, i) => (
         <p key={i} style={{ color: p.color }}>
           {p.name}: {p.value.toFixed(1)}%
@@ -48,13 +54,35 @@ const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
   )
 }
 
+interface CustomDotProps {
+  cx?: number
+  cy?: number
+  payload?: DataPoint
+  stroke?: string
+}
+
+const ProjectedDot = ({ cx, cy, payload, stroke }: CustomDotProps) => {
+  if (!payload?.projected || cx === undefined || cy === undefined) return null
+  return (
+    <circle
+      cx={cx}
+      cy={cy}
+      r={4}
+      fill="none"
+      stroke={stroke}
+      strokeWidth={2}
+      strokeDasharray="3 3"
+    />
+  )
+}
+
 export default function TimelineChart({ data }: Props) {
   return (
     <div className="bg-dead-surface border border-dead-border p-6 h-full">
       <p className="font-mono text-dead-dim text-xs uppercase tracking-wider mb-4">
         Historical Timeline &mdash; Bot Traffic vs AI Content
       </p>
-      <ResponsiveContainer width="100%" height={280}>
+      <ResponsiveContainer width="100%" height={280} minHeight={200}>
         <AreaChart data={data}>
           <CartesianGrid strokeDasharray="3 3" stroke="#1a1a1a" />
           <XAxis
@@ -79,6 +107,7 @@ export default function TimelineChart({ data }: Props) {
             stroke="#ff4444"
             fill="#ff444422"
             strokeWidth={2}
+            dot={<ProjectedDot />}
           />
           <Area
             type="monotone"
@@ -87,6 +116,7 @@ export default function TimelineChart({ data }: Props) {
             stroke="#ffaa00"
             fill="#ffaa0022"
             strokeWidth={2}
+            dot={<ProjectedDot />}
           />
         </AreaChart>
       </ResponsiveContainer>

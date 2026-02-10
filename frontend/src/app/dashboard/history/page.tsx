@@ -1,14 +1,15 @@
 /**
  * Scan History page - shows past scans for premium users.
- * Paginated, sorted by date, with verdict color coding.
+ * Paginated, filterable by verdict, searchable by URL.
  */
 
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useSession } from 'next-auth/react'
 import Link from 'next/link'
 import { api } from '@/lib/api-client'
+import { verdictColor, verdictLabel } from '@/lib/verdict'
 import Header from '@/components/layout/Header'
 
 interface Scan {
@@ -20,23 +21,14 @@ interface Scan {
   created_at: string
 }
 
-function verdictColor(verdict: string): string {
-  switch (verdict) {
-    case 'human': return 'text-dead-safe'
-    case 'mixed': return 'text-dead-ai'
-    case 'ai_generated': return 'text-dead-danger'
-    default: return 'text-dead-dim'
-  }
+interface HistoryResponse {
+  scans: Scan[]
+  total: number
 }
 
-function verdictLabel(verdict: string): string {
-  switch (verdict) {
-    case 'human': return 'HUMAN'
-    case 'mixed': return 'MIXED'
-    case 'ai_generated': return 'AI GENERATED'
-    default: return verdict.toUpperCase()
-  }
-}
+type SortField = 'created_at' | 'ai_probability'
+type SortDir = 'asc' | 'desc'
+type VerdictFilter = 'all' | 'human' | 'mixed' | 'ai_generated'
 
 export default function HistoryPage() {
   const { data: session, status } = useSession()
@@ -44,19 +36,57 @@ export default function HistoryPage() {
   const [total, setTotal] = useState(0)
   const [offset, setOffset] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
+  const [verdictFilter, setVerdictFilter] = useState<VerdictFilter>('all')
+  const [sortField, setSortField] = useState<SortField>('created_at')
+  const [sortDir, setSortDir] = useState<SortDir>('desc')
   const limit = 20
 
   useEffect(() => {
     if (status !== 'authenticated') return
     setLoading(true)
     api.getScanHistory(limit, offset)
-      .then((data: any) => {
+      .then((data: HistoryResponse) => {
         setScans(data.scans || [])
         setTotal(data.total || 0)
       })
       .catch(console.error)
       .finally(() => setLoading(false))
   }, [status, offset])
+
+  // Client-side filter + sort on the current page of results
+  const filteredScans = useMemo(() => {
+    let result = [...scans]
+
+    // Filter by verdict
+    if (verdictFilter !== 'all') {
+      result = result.filter(s => s.verdict === verdictFilter)
+    }
+
+    // Filter by search term (URL match)
+    if (search.trim()) {
+      const q = search.toLowerCase()
+      result = result.filter(s => s.url.toLowerCase().includes(q))
+    }
+
+    // Sort
+    result.sort((a, b) => {
+      const valA = sortField === 'created_at' ? new Date(a.created_at).getTime() : a.ai_probability
+      const valB = sortField === 'created_at' ? new Date(b.created_at).getTime() : b.ai_probability
+      return sortDir === 'desc' ? valB - valA : valA - valB
+    })
+
+    return result
+  }, [scans, verdictFilter, search, sortField, sortDir])
+
+  const toggleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDir(d => d === 'desc' ? 'asc' : 'desc')
+    } else {
+      setSortField(field)
+      setSortDir('desc')
+    }
+  }
 
   if (status === 'loading') {
     return (
@@ -87,23 +117,71 @@ export default function HistoryPage() {
           </Link>
         </div>
 
+        {/* Search + Filter bar */}
+        <div className="flex flex-col sm:flex-row gap-3 mb-4">
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by URL..."
+            aria-label="Search scans by URL"
+            className="flex-1 bg-dead-bg border border-dead-border px-3 py-2 font-mono text-sm text-dead-text placeholder:text-dead-muted focus:border-dead-accent focus:outline-none transition-colors"
+          />
+          <div className="flex gap-2">
+            <select
+              value={verdictFilter}
+              onChange={(e) => setVerdictFilter(e.target.value as VerdictFilter)}
+              aria-label="Filter by verdict"
+              className="bg-dead-bg border border-dead-border px-3 py-2 font-mono text-xs text-dead-text focus:border-dead-accent focus:outline-none"
+            >
+              <option value="all">All Verdicts</option>
+              <option value="human">Human</option>
+              <option value="mixed">Mixed</option>
+              <option value="ai_generated">AI Generated</option>
+            </select>
+            <button
+              onClick={() => toggleSort('created_at')}
+              className={`border border-dead-border px-3 py-2 font-mono text-xs transition-colors ${sortField === 'created_at' ? 'text-dead-accent border-dead-accent/50' : 'text-dead-dim hover:text-dead-accent'}`}
+            >
+              Date {sortField === 'created_at' && (sortDir === 'desc' ? '↓' : '↑')}
+            </button>
+            <button
+              onClick={() => toggleSort('ai_probability')}
+              className={`border border-dead-border px-3 py-2 font-mono text-xs transition-colors ${sortField === 'ai_probability' ? 'text-dead-accent border-dead-accent/50' : 'text-dead-dim hover:text-dead-accent'}`}
+            >
+              AI % {sortField === 'ai_probability' && (sortDir === 'desc' ? '↓' : '↑')}
+            </button>
+          </div>
+        </div>
+
         {loading ? (
           <div className="space-y-3">
             {Array.from({ length: 5 }).map((_, i) => (
               <div key={i} className="bg-dead-surface border border-dead-border p-4 animate-pulse h-20" />
             ))}
           </div>
-        ) : scans.length === 0 ? (
+        ) : filteredScans.length === 0 ? (
           <div className="bg-dead-surface border border-dead-border p-8 text-center">
-            <p className="font-mono text-dead-dim mb-2">No scans yet</p>
-            <Link href="/dashboard" className="font-mono text-sm text-dead-accent hover:underline">
-              Go scan a URL →
-            </Link>
+            <p className="font-mono text-dead-dim mb-2">
+              {scans.length === 0 ? 'No scans yet' : 'No scans match your filters'}
+            </p>
+            {scans.length === 0 ? (
+              <Link href="/dashboard" className="font-mono text-sm text-dead-accent hover:underline">
+                Go scan a URL →
+              </Link>
+            ) : (
+              <button
+                onClick={() => { setSearch(''); setVerdictFilter('all') }}
+                className="font-mono text-sm text-dead-accent hover:underline"
+              >
+                Clear filters
+              </button>
+            )}
           </div>
         ) : (
           <>
             <div className="space-y-2">
-              {scans.map((scan) => (
+              {filteredScans.map((scan) => (
                 <div
                   key={scan.id}
                   className="bg-dead-surface border border-dead-border p-4 hover:border-dead-accent/30 transition-colors"

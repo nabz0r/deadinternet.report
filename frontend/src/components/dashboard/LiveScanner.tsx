@@ -6,9 +6,10 @@
 
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { api } from '@/lib/api-client'
+import { verdictColor, verdictLabel } from '@/lib/verdict'
 import type { ScanResult, ScanUsage } from '@/types/api'
 
 function isValidUrl(input: string): boolean {
@@ -20,36 +21,31 @@ function isValidUrl(input: string): boolean {
   }
 }
 
-function verdictColor(verdict: string): string {
-  switch (verdict) {
-    case 'human': return 'text-dead-safe'
-    case 'mixed': return 'text-dead-ai'
-    case 'ai_generated': return 'text-dead-danger'
-    default: return 'text-dead-dim'
-  }
-}
-
-function verdictLabel(verdict: string): string {
-  switch (verdict) {
-    case 'human': return 'LIKELY HUMAN'
-    case 'mixed': return 'MIXED SIGNALS'
-    case 'ai_generated': return 'AI GENERATED'
-    default: return verdict?.toUpperCase() || 'UNKNOWN'
-  }
-}
-
 export default function LiveScanner() {
   const [url, setUrl] = useState('')
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<ScanResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [usage, setUsage] = useState<ScanUsage | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   // Load scan usage on mount
   useEffect(() => {
     api.getScanUsage()
       .then(setUsage)
       .catch(() => { /* usage not available for unauthenticated users */ })
+  }, [])
+
+  // Cmd+K / Ctrl+K shortcut to focus scanner input
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        inputRef.current?.focus()
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
   }, [])
 
   const handleScan = async () => {
@@ -105,15 +101,21 @@ export default function LiveScanner() {
       {/* Input */}
       <div className="p-4">
         <div className="flex gap-2">
-          <input
-            type="url"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleScan()}
-            placeholder="Paste any URL to analyze..."
-            aria-label="URL to scan for AI-generated content"
-            className="flex-1 bg-dead-bg border border-dead-border px-4 py-3 font-mono text-sm text-dead-text placeholder:text-dead-muted focus:border-dead-accent focus:outline-none transition-colors"
-          />
+          <div className="relative flex-1">
+            <input
+              ref={inputRef}
+              type="url"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleScan()}
+              placeholder="Paste any URL to analyze..."
+              aria-label="URL to scan for AI-generated content"
+              className="w-full bg-dead-bg border border-dead-border px-4 py-3 pr-16 font-mono text-sm text-dead-text placeholder:text-dead-muted focus:border-dead-accent focus:outline-none transition-colors"
+            />
+            <kbd className="absolute right-3 top-1/2 -translate-y-1/2 hidden sm:inline-flex items-center gap-0.5 font-mono text-[10px] text-dead-muted border border-dead-border px-1.5 py-0.5 rounded">
+              ⌘K
+            </kbd>
+          </div>
           <button
             onClick={handleScan}
             disabled={loading || !url.trim() || (usage?.remaining === 0)}
@@ -132,7 +134,7 @@ export default function LiveScanner() {
 
         {/* Loading state */}
         {loading && (
-          <div className="mt-4 bg-dead-bg border border-dead-border p-6 text-center">
+          <div className="mt-4 bg-dead-bg border border-dead-border p-6 text-center" role="status" aria-live="polite">
             <div className="inline-block w-6 h-6 border-2 border-dead-accent border-t-transparent rounded-full animate-spin mb-2" />
             <p className="font-mono text-dead-accent text-sm animate-pulse">
               Fetching and analyzing content...
@@ -166,7 +168,14 @@ export default function LiveScanner() {
             </div>
 
             {/* Progress bar */}
-            <div className="w-full bg-dead-border h-2">
+            <div
+              className="w-full bg-dead-border h-2"
+              role="progressbar"
+              aria-valuenow={Math.round(result.ai_probability * 100)}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label={`AI probability: ${Math.round(result.ai_probability * 100)}%`}
+            >
               <div
                 className="h-full transition-all duration-1000 ease-out"
                 style={{
