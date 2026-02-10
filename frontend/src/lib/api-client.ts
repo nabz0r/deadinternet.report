@@ -6,6 +6,17 @@
  * to keep JWT tokens server-side only.
  */
 
+import type {
+  DashboardStats,
+  ScanResponse,
+  ScanUsage,
+  ScanHistoryResponse,
+  UserProfile,
+  DeadIndexResponse,
+  Platform,
+  TimelineEntry,
+} from '@/types/api'
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 const PROXY_BASE = '/api/backend'  // Next.js API route that proxies to backend
 
@@ -43,15 +54,15 @@ class ApiClient {
 
   // --- Stats (public, direct) ---
   async getStats() {
-    return this.publicRequest<any>('/api/v1/stats/')
+    return this.publicRequest<DashboardStats>('/api/v1/stats/')
   }
 
   async getPlatforms() {
-    return this.publicRequest<any>('/api/v1/stats/platforms')
+    return this.publicRequest<Record<string, Platform>>('/api/v1/stats/platforms')
   }
 
   async getTimeline() {
-    return this.publicRequest<any[]>('/api/v1/stats/timeline')
+    return this.publicRequest<TimelineEntry[]>('/api/v1/stats/timeline')
   }
 
   async getTicker() {
@@ -59,28 +70,28 @@ class ApiClient {
   }
 
   async getDeadIndex() {
-    return this.publicRequest<{ index: number; last_updated: string }>('/api/v1/stats/index')
+    return this.publicRequest<DeadIndexResponse>('/api/v1/stats/index')
   }
 
   // --- Scanner (auth, proxied) ---
   async scanUrl(url: string) {
-    return this.authRequest<any>('/scanner/scan', {
+    return this.authRequest<ScanResponse>('/scanner/scan', {
       method: 'POST',
       body: JSON.stringify({ url }),
     })
   }
 
   async getScanUsage() {
-    return this.authRequest<any>('/scanner/usage')
+    return this.authRequest<ScanUsage>('/scanner/usage')
   }
 
   async getScanHistory(limit = 20, offset = 0) {
-    return this.authRequest<any>(`/scanner/history?limit=${limit}&offset=${offset}`)
+    return this.authRequest<ScanHistoryResponse>(`/scanner/history?limit=${limit}&offset=${offset}`)
   }
 
   // --- User (auth, proxied) ---
   async getProfile() {
-    return this.authRequest<any>('/users/me')
+    return this.authRequest<UserProfile>('/users/me')
   }
 
   async createCheckout(priceId: string) {

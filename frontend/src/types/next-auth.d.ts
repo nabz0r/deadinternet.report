@@ -13,17 +13,17 @@ declare module 'next-auth' {
       name?: string | null
       email?: string | null
       image?: string | null
-      tier: string
+      tier: 'ghost' | 'hunter' | 'operator'
     }
   }
 
   interface User {
-    tier?: string
+    tier?: 'ghost' | 'hunter' | 'operator'
   }
 }
 
 declare module 'next-auth/jwt' {
   interface JWT {
-    tier?: string
+    tier?: 'ghost' | 'hunter' | 'operator'
   }
 }

@@ -2,10 +2,13 @@
 Stripe Service - subscription management.
 
 Handles:
-  - Creating checkout sessions
-  - Processing webhooks
+  - Creating checkout sessions (with idempotency)
+  - Processing webhooks (with duplicate detection)
   - Syncing subscription state to DB
 """
+
+import logging
+from uuid import uuid4
 
 import stripe
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +17,8 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.models.user import User
 from app.models.subscription import Subscription
+
+logger = logging.getLogger(__name__)
 
 stripe.api_key = settings.stripe_secret_key
 
@@ -38,16 +43,25 @@ class StripeService:
             success_url=success_url,
             cancel_url=cancel_url,
             metadata={"user_id": user_id},
+            idempotency_key=str(uuid4()),
         )
         return session.url
 
     async def handle_webhook_event(
         self, payload: bytes, sig_header: str, db: AsyncSession
     ) -> dict:
-        """Process Stripe webhook event."""
+        """Process Stripe webhook event with idempotency protection."""
         event = stripe.Webhook.construct_event(
             payload, sig_header, settings.stripe_webhook_secret
         )
+
+        # Idempotency: skip already-processed events
+        from app.core.redis import redis_client
+        event_key = f"stripe_event:{event.id}"
+        already_processed = await redis_client.get_cached(event_key)
+        if already_processed:
+            logger.info(f"Skipping duplicate Stripe event: {event.id}")
+            return {"event": event.type, "processed": False, "duplicate": True}
 
         if event.type == "checkout.session.completed":
             await self._handle_checkout_complete(event.data.object, db)
@@ -55,6 +69,9 @@ class StripeService:
             await self._handle_subscription_update(event.data.object, db)
         elif event.type == "customer.subscription.deleted":
             await self._handle_subscription_cancel(event.data.object, db)
+
+        # Mark event as processed (TTL 48h to handle Stripe retries)
+        await redis_client.set_cached(event_key, "1", ttl=172800)
 
         return {"event": event.type, "processed": True}
 
