@@ -11,6 +11,7 @@ import { useSession } from 'next-auth/react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { api } from '@/lib/api-client'
+import type { DashboardStats } from '@/types/api'
 import { hasFeature } from '@/lib/constants'
 import DeadIndexGauge from '@/components/dashboard/DeadIndexGauge'
 import PlatformBreakdown from '@/components/dashboard/PlatformBreakdown'
@@ -32,7 +33,7 @@ export default function DashboardPage() {
   const { data: session, status } = useSession()
   const searchParams = useSearchParams()
   const { toast } = useToast()
-  const [stats, setStats] = useState<any>(null)
+  const [stats, setStats] = useState<DashboardStats | null>(null)
   const [loading, setLoading] = useState(true)
   const timeoutRef = useRef<ReturnType<typeof setTimeout>>()
 

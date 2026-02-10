@@ -22,12 +22,24 @@ interface Props {
   data: DataPoint[]
 }
 
-const CustomTooltip = ({ active, payload, label }: any) => {
+interface TooltipPayloadEntry {
+  name: string
+  value: number
+  color: string
+}
+
+interface CustomTooltipProps {
+  active?: boolean
+  payload?: TooltipPayloadEntry[]
+  label?: string | number
+}
+
+const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
   if (!active || !payload) return null
   return (
     <div className="bg-dead-surface border border-dead-border p-3 font-mono text-xs">
       <p className="text-dead-text font-bold mb-1">{label}</p>
-      {payload.map((p: any, i: number) => (
+      {payload.map((p, i) => (
         <p key={i} style={{ color: p.color }}>
           {p.name}: {p.value.toFixed(1)}%
         </p>

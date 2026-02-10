@@ -12,7 +12,7 @@ import { api } from '@/lib/api-client'
 
 export default function Header() {
   const { data: session } = useSession()
-  const tier = (session?.user as any)?.tier || 'ghost'
+  const tier = session?.user?.tier || 'ghost'
   const [menuOpen, setMenuOpen] = useState(false)
   const [billingLoading, setBillingLoading] = useState(false)
 
@@ -78,6 +78,8 @@ export default function Header() {
           <div className="relative">
             <button
               onClick={() => setMenuOpen(!menuOpen)}
+              aria-label="User menu"
+              aria-expanded={menuOpen}
               className="flex items-center gap-2 hover:opacity-80 transition-opacity"
             >
               {session.user.image && (

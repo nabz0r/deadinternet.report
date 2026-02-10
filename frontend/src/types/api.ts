@@ -24,6 +24,8 @@ export interface DashboardStats {
   global: {
     bot_traffic_pct: number
     ai_content_pct: number
+    ai_content_new_pages_pct: number
+    ai_articles_pct: number
     fake_accounts_pct: number
     sources: string[]
   }

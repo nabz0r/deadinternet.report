@@ -9,6 +9,16 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { api } from '@/lib/api-client'
+import type { ScanResult, ScanUsage } from '@/types/api'
+
+function isValidUrl(input: string): boolean {
+  try {
+    const url = new URL(input)
+    return url.protocol === 'http:' || url.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
 
 function verdictColor(verdict: string): string {
   switch (verdict) {
@@ -31,29 +41,37 @@ function verdictLabel(verdict: string): string {
 export default function LiveScanner() {
   const [url, setUrl] = useState('')
   const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState<any>(null)
+  const [result, setResult] = useState<ScanResult | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [usage, setUsage] = useState<{ used: number; limit: number; remaining: number } | null>(null)
+  const [usage, setUsage] = useState<ScanUsage | null>(null)
 
   // Load scan usage on mount
   useEffect(() => {
     api.getScanUsage()
       .then(setUsage)
-      .catch(() => {})
+      .catch(() => { /* usage not available for unauthenticated users */ })
   }, [])
 
   const handleScan = async () => {
-    if (!url.trim()) return
+    const trimmed = url.trim()
+    if (!trimmed) return
+
+    if (!isValidUrl(trimmed)) {
+      setError('Please enter a valid URL starting with http:// or https://')
+      return
+    }
+
     setLoading(true)
     setError(null)
     setResult(null)
 
     try {
-      const data = await api.scanUrl(url.trim())
+      const data = await api.scanUrl(trimmed)
       setResult(data.result)
       if (data.usage) setUsage(data.usage)
-    } catch (err: any) {
-      setError(err.message || 'Scan failed')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Scan failed'
+      setError(message)
     } finally {
       setLoading(false)
     }
@@ -93,6 +111,7 @@ export default function LiveScanner() {
             onChange={(e) => setUrl(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleScan()}
             placeholder="Paste any URL to analyze..."
+            aria-label="URL to scan for AI-generated content"
             className="flex-1 bg-dead-bg border border-dead-border px-4 py-3 font-mono text-sm text-dead-text placeholder:text-dead-muted focus:border-dead-accent focus:outline-none transition-colors"
           />
           <button
@@ -126,7 +145,7 @@ export default function LiveScanner() {
 
         {/* Error */}
         {error && (
-          <div className="mt-4 bg-dead-danger/5 border border-dead-danger/30 p-4">
+          <div className="mt-4 bg-dead-danger/5 border border-dead-danger/30 p-4" role="alert">
             <p className="font-mono text-dead-danger text-sm">{error}</p>
           </div>
         )}

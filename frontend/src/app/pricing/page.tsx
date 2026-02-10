@@ -31,8 +31,9 @@ export default function PricingPage() {
     try {
       const { checkout_url } = await api.createCheckout(tier.priceId)
       window.location.href = checkout_url
-    } catch (err: any) {
-      alert(err.message || 'Failed to create checkout session')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to create checkout session'
+      alert(message)
     } finally {
       setLoading(null)
     }

@@ -33,7 +33,7 @@ export default class ErrorBoundary extends Component<Props, State> {
       }
 
       return (
-        <div className="bg-dead-surface border border-red-900/50 p-6 font-mono">
+        <div className="bg-dead-surface border border-red-900/50 p-6 font-mono" role="alert">
           <div className="text-red-500 text-sm mb-2">[ RENDER ERROR ]</div>
           <p className="text-dead-dim text-xs mb-4">
             Something went wrong displaying this section.

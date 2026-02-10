@@ -13,7 +13,7 @@ import { hasFeature } from '@/lib/constants'
 export default function MobileNav() {
   const pathname = usePathname()
   const { data: session } = useSession()
-  const tier = (session?.user as any)?.tier || 'ghost'
+  const tier = session?.user?.tier || 'ghost'
 
   const items = [
     { href: '/dashboard', label: 'Dashboard', icon: '◉' },
@@ -32,6 +32,7 @@ export default function MobileNav() {
             <Link
               key={item.href}
               href={item.href}
+              aria-current={active ? 'page' : undefined}
               className={`flex flex-col items-center gap-0.5 px-3 py-1 font-mono text-xs transition-colors ${
                 active
                   ? 'text-dead-accent'

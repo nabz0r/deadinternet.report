@@ -13,6 +13,7 @@ import { api } from '@/lib/api-client'
 export default function UpgradeBanner() {
   const { data: session } = useSession()
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const handleUpgrade = async () => {
     if (!session) return
@@ -20,8 +21,9 @@ export default function UpgradeBanner() {
     try {
       const { checkout_url } = await api.createCheckout(TIERS.hunter.priceId)
       window.location.href = checkout_url
-    } catch (err: any) {
-      alert(err.message || 'Failed to start checkout')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to start checkout'
+      setError(message)
     } finally {
       setLoading(false)
     }
@@ -29,6 +31,11 @@ export default function UpgradeBanner() {
 
   return (
     <div className="bg-dead-surface border border-dead-accent/30 p-6">
+      {error && (
+        <div className="mb-4 bg-dead-danger/5 border border-dead-danger/30 p-3" role="alert">
+          <p className="font-mono text-dead-danger text-xs">{error}</p>
+        </div>
+      )}
       <div className="flex flex-col md:flex-row items-center justify-between gap-4">
         <div>
           <p className="font-mono text-dead-accent text-sm tracking-widest uppercase mb-1">
