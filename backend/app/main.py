@@ -17,6 +17,7 @@ from app.core.config import settings
 from app.core.database import engine, Base
 from app.core.redis import redis_client
 from app.middleware.ip_rate_limit import IPRateLimitMiddleware
+from app.middleware.request_logging import RequestLoggingMiddleware
 
 # CRITICAL: import all models so SQLAlchemy knows about them
 # for Base.metadata.create_all() to work
@@ -57,6 +58,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_middleware(IPRateLimitMiddleware)
+app.add_middleware(RequestLoggingMiddleware)
 
 # Routes
 app.include_router(stats.router, prefix="/api/v1/stats", tags=["stats"])

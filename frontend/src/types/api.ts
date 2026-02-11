@@ -85,3 +85,57 @@ export interface DeadIndexResponse {
   index: number
   last_updated: string
 }
+
+// ── Analytics types ─────────────────────────────────────────────────
+
+export interface ScanVolumeEntry {
+  date: string
+  total: number
+  ai_generated: number
+  mixed: number
+  human: number
+  avg_ai_probability: number
+}
+
+export interface DomainStatsItem {
+  domain: string
+  scan_count: number
+  ai_generated_count: number
+  mixed_count: number
+  human_count: number
+  avg_ai_probability: number
+  ai_rate: number
+  last_scanned: string | null
+}
+
+export interface VerdictBreakdown {
+  ai_generated: number
+  mixed: number
+  human: number
+}
+
+export interface ScanSummary {
+  total_scans: number
+  avg_ai_probability: number
+  verdict_breakdown: VerdictBreakdown
+  verdict_rates: VerdictBreakdown
+  total_tokens_used: number
+  avg_scan_duration_ms: number
+}
+
+export interface AnalyticsResponse {
+  dead_internet_index: number
+  scan_summary: ScanSummary
+  dynamic_ticker_facts: string[]
+  scan_volume_trend: ScanVolumeEntry[]
+  top_domains: DomainStatsItem[]
+}
+
+export interface UserAnalytics {
+  total_scans: number
+  scans_this_month: number
+  avg_ai_probability: number
+  verdict_breakdown: VerdictBreakdown
+  top_domains: DomainStatsItem[]
+  recent_activity: ScanVolumeEntry[]
+}

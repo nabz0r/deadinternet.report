@@ -187,6 +187,12 @@ export default function DashboardPage() {
                 >
                   ◈ Scan History
                 </Link>
+                <Link
+                  href="/dashboard/analytics"
+                  className="font-mono text-xs text-dead-dim hover:text-dead-accent transition-colors"
+                >
+                  ◆ Analytics
+                </Link>
                 <a
                   href="/docs"
                   target="_blank"

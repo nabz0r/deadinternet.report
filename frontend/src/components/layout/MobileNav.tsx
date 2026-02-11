@@ -18,7 +18,10 @@ export default function MobileNav() {
   const items = [
     { href: '/dashboard', label: 'Dashboard', icon: '◉' },
     ...(hasFeature(tier, 'hunter')
-      ? [{ href: '/dashboard/history', label: 'History', icon: '◈' }]
+      ? [
+          { href: '/dashboard/history', label: 'History', icon: '◈' },
+          { href: '/dashboard/analytics', label: 'Analytics', icon: '◆' },
+        ]
       : []),
     { href: '/pricing', label: 'Pricing', icon: '▲' },
   ]

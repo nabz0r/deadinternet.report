@@ -15,6 +15,10 @@ import type {
   DeadIndexResponse,
   Platform,
   TimelineEntry,
+  AnalyticsResponse,
+  DomainStatsItem,
+  ScanVolumeEntry,
+  UserAnalytics,
 } from '@/types/api'
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
@@ -73,6 +77,19 @@ class ApiClient {
     return this.publicRequest<DeadIndexResponse>('/api/v1/stats/index')
   }
 
+  // --- Analytics (public, direct) ---
+  async getAnalytics() {
+    return this.publicRequest<AnalyticsResponse>('/api/v1/stats/analytics')
+  }
+
+  async getTopDomains(limit = 20, sort: 'count' | 'ai_rate' = 'count') {
+    return this.publicRequest<DomainStatsItem[]>(`/api/v1/stats/domains?limit=${limit}&sort=${sort}`)
+  }
+
+  async getScanVolume(days = 30) {
+    return this.publicRequest<ScanVolumeEntry[]>(`/api/v1/stats/volume?days=${days}`)
+  }
+
   // --- Scanner (auth, proxied) ---
   async scanUrl(url: string) {
     return this.authRequest<ScanResponse>('/scanner/scan', {
@@ -105,6 +122,10 @@ class ApiClient {
     return this.authRequest<{ portal_url: string }>('/users/portal', {
       method: 'POST',
     })
+  }
+
+  async getUserAnalytics() {
+    return this.authRequest<UserAnalytics>('/users/me/analytics')
   }
 }
 

@@ -45,9 +45,14 @@ export default function Header() {
             Dashboard
           </Link>
           {hasFeature(tier, 'hunter') && (
-            <Link href="/dashboard/history" className="text-dead-dim hover:text-dead-text transition-colors">
-              History
-            </Link>
+            <>
+              <Link href="/dashboard/history" className="text-dead-dim hover:text-dead-text transition-colors">
+                History
+              </Link>
+              <Link href="/dashboard/analytics" className="text-dead-dim hover:text-dead-text transition-colors">
+                Analytics
+              </Link>
+            </>
           )}
           <Link href="/pricing" className="text-dead-dim hover:text-dead-text transition-colors">
             Pricing
@@ -126,13 +131,22 @@ export default function Header() {
                       Dashboard
                     </Link>
                     {hasFeature(tier, 'hunter') && (
-                      <Link
-                        href="/dashboard/history"
-                        className="block px-4 py-2 font-mono text-sm text-dead-dim hover:text-dead-accent hover:bg-dead-bg transition-colors"
-                        onClick={() => setMenuOpen(false)}
-                      >
-                        Scan History
-                      </Link>
+                      <>
+                        <Link
+                          href="/dashboard/history"
+                          className="block px-4 py-2 font-mono text-sm text-dead-dim hover:text-dead-accent hover:bg-dead-bg transition-colors"
+                          onClick={() => setMenuOpen(false)}
+                        >
+                          Scan History
+                        </Link>
+                        <Link
+                          href="/dashboard/analytics"
+                          className="block px-4 py-2 font-mono text-sm text-dead-dim hover:text-dead-accent hover:bg-dead-bg transition-colors"
+                          onClick={() => setMenuOpen(false)}
+                        >
+                          Analytics
+                        </Link>
+                      </>
                     )}
                     <Link
                       href="/pricing"
