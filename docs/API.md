@@ -26,13 +26,13 @@ curl -H "Authorization: Bearer YOUR_JWT_TOKEN" \
 
 ### GET /stats/
 
-Full dataset including all metrics.
+Full dataset including all metrics. Stats are blended with live scan data when available (research data + aggregated scan results).
 
 **Response:**
 ```json
 {
   "dead_internet_index": 0.67,
-  "last_updated": "2026-02-08",
+  "last_updated": "2026-02-11",
   "global": {
     "bot_traffic_pct": 51.0,
     "ai_content_new_pages_pct": 74.2,
@@ -101,25 +101,119 @@ Array of facts for the scrolling ticker.
 
 ### GET /stats/index
 
-The Dead Internet Index composite score.
+The Dead Internet Index composite score. Blends research data (70%) with live scan results (30%) when sufficient scans exist (10+).
 
 **Response:**
 ```json
 {
   "index": 0.67,
-  "last_updated": "2026-02-08"
+  "last_updated": "2026-02-11"
 }
 ```
 
-### GET /health
+### GET /stats/analytics
 
-Health check for monitoring.
+Global scan analytics including the Dead Internet Index, scan summary, dynamic ticker facts, volume trends, and top domains.
 
 **Response:**
 ```json
 {
-  "status": "alive",
-  "service": "deadinternet-api"
+  "dead_internet_index": 0.67,
+  "scan_summary": {
+    "total_scans": 1542,
+    "avg_ai_probability": 0.62,
+    "verdict_breakdown": {
+      "ai_generated": 823,
+      "mixed": 412,
+      "human": 307
+    },
+    "verdict_rates": {
+      "ai_generated": 0.534,
+      "mixed": 0.267,
+      "human": 0.199
+    },
+    "total_tokens_used": 385000,
+    "avg_scan_duration_ms": 2150
+  },
+  "dynamic_ticker_facts": [
+    "53.4% of scanned pages were flagged as AI-generated",
+    "Average AI probability across all scans: 62.0%"
+  ],
+  "scan_volume_trend": [
+    { "date": "2026-02-10", "total": 45, "ai_generated": 24, "mixed": 12, "human": 9, "avg_ai_probability": 0.61 }
+  ],
+  "top_domains": [
+    { "domain": "example.com", "scan_count": 42, "ai_generated_count": 28, "mixed_count": 8, "human_count": 6, "avg_ai_probability": 0.71, "ai_rate": 0.667, "last_scanned": "2026-02-11" }
+  ]
+}
+```
+
+### GET /stats/domains?limit=20&sort=scan_count
+
+Top scanned domains ranked by scan count or AI rate.
+
+**Query parameters:**
+- `limit` (int, default 20) — max domains to return
+- `sort` (string, default "scan_count") — sort by `scan_count` or `ai_rate`
+
+**Response:**
+```json
+[
+  {
+    "domain": "example.com",
+    "scan_count": 42,
+    "ai_generated_count": 28,
+    "mixed_count": 8,
+    "human_count": 6,
+    "avg_ai_probability": 0.71,
+    "ai_rate": 0.667,
+    "last_scanned": "2026-02-11"
+  }
+]
+```
+
+### GET /stats/volume?days=30
+
+Daily scan volume trend for charting.
+
+**Query parameters:**
+- `days` (int, default 30) — number of days to include
+
+**Response:**
+```json
+[
+  {
+    "date": "2026-02-10",
+    "total": 45,
+    "ai_generated": 24,
+    "mixed": 12,
+    "human": 9,
+    "avg_ai_probability": 0.61
+  }
+]
+```
+
+### GET /health
+
+Health check for monitoring. Verifies database and Redis connectivity.
+
+**Response (200):**
+```json
+{
+  "service": "deadinternet-api",
+  "database": "ok",
+  "redis": "ok",
+  "status": "healthy"
+}
+```
+
+**Response (503):**
+```json
+{
+  "service": "deadinternet-api",
+  "database": "error",
+  "redis": "ok",
+  "status": "degraded"
 }
 ```
 
@@ -129,7 +223,7 @@ Health check for monitoring.
 
 ### POST /scanner/scan
 
-Analyze a URL for AI-generated content using Claude AI.
+Analyze a URL for AI-generated content using Claude AI. Results are cached for the configured TTL (default 24h).
 
 **Request:**
 ```json
@@ -150,7 +244,7 @@ Analyze a URL for AI-generated content using Claude AI.
     "content_snippet": "In today's rapidly evolving digital landscape...",
     "model_used": "claude-sonnet-4-5-20250929",
     "scan_duration_ms": 3420,
-    "created_at": "2026-02-08T15:30:00Z"
+    "created_at": "2026-02-11T15:30:00Z"
   },
   "usage": {
     "used": 3,
@@ -214,9 +308,47 @@ Current user profile.
 }
 ```
 
+### GET /users/me/analytics
+
+Personal scan analytics for the authenticated user. Includes total scans, monthly activity, verdict breakdown, top domains (www-stripped, grouped), and recent daily activity (last 30 days).
+
+**Response:**
+```json
+{
+  "total_scans": 87,
+  "scans_this_month": 23,
+  "avg_ai_probability": 0.58,
+  "verdict_breakdown": {
+    "ai_generated": 42,
+    "mixed": 28,
+    "human": 17
+  },
+  "top_domains": [
+    {
+      "domain": "example.com",
+      "scan_count": 15,
+      "ai_generated_count": 10,
+      "mixed_count": 3,
+      "human_count": 2,
+      "avg_ai_probability": 0.72,
+      "ai_rate": 0.667
+    }
+  ],
+  "recent_activity": [
+    {
+      "date": "2026-02-10",
+      "total": 5,
+      "ai_generated": 3,
+      "mixed": 1,
+      "human": 1
+    }
+  ]
+}
+```
+
 ### POST /users/sync
 
-Sync user from NextAuth on login. Called internally by the NextAuth JWT callback.
+Sync user from NextAuth on login. Called internally by the NextAuth JWT callback. Requires `X-Internal-Secret` header.
 
 **Request:**
 ```json
@@ -240,7 +372,7 @@ Sync user from NextAuth on login. Called internally by the NextAuth JWT callback
 
 ### POST /users/checkout?price_id=price_xxx
 
-Create a Stripe Checkout session.
+Create a Stripe Checkout session. Uses idempotency keys to prevent duplicate sessions.
 
 **Response:**
 ```json
@@ -262,17 +394,51 @@ Open Stripe billing portal for subscription management.
 
 ---
 
+## Internal Endpoints
+
+### POST /stats/aggregate
+
+Trigger the full data aggregation pipeline. Requires `X-Internal-Secret` header for authentication.
+
+The pipeline:
+1. Computes daily scan aggregates (scan_aggregates table)
+2. Computes domain statistics (domain_stats table)
+3. Calculates the dynamic Dead Internet Index
+4. Generates global scan summary
+5. Creates dynamic ticker facts
+6. Computes scan volume trends
+7. Identifies top domains
+8. Caches all results in Redis
+
+**Request headers:**
+```
+X-Internal-Secret: YOUR_INTERNAL_API_SECRET
+```
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "message": "Aggregation complete"
+}
+```
+
+---
+
 ## Rate Limits
 
 | Tier | Scans/day | API Rate |
 |------|-----------|----------|
-| Ghost | 0 | 30 req/s (nginx) |
-| Hunter | 10 | 30 req/s (nginx) |
-| Operator | 1,000 | 30 req/s (nginx) |
+| Ghost | 0 | 30 req/s (nginx) + 60 req/min (app) |
+| Hunter | 10 | 30 req/s (nginx) + 60 req/min (app) |
+| Operator | 1,000 | 30 req/s (nginx) + 60 req/min (app) |
 
-Rate limit headers on scanner responses:
-- `X-RateLimit-Limit`: Max scans per day
-- `X-RateLimit-Remaining`: Scans remaining
+Rate limit headers on all responses:
+- `X-RateLimit-Limit`: Max requests per window
+- `X-RateLimit-Remaining`: Requests remaining in window
+
+Additional header on all responses:
+- `X-Request-Duration-Ms`: Server-side request processing time
 
 ---
 

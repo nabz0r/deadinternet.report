@@ -27,13 +27,15 @@ graph TB
         subgraph Backend["Backend Container"]
             FastAPI["FastAPI<br/>:8000<br/>Async Python"]
             Scanner["Scanner Service<br/>SSRF Protection<br/>Prompt Sanitization"]
+            Aggregation["Aggregation Service<br/>DII Calculation<br/>Domain Analytics"]
             StripeService["Stripe Service<br/>Checkout + Webhooks"]
             RateLimiter["Rate Limiter<br/>Per-user daily limits"]
+            ReqLogger["Request Logger<br/>Structured logging"]
         end
 
         subgraph Data["Data Layer"]
-            PG[("PostgreSQL 16<br/>:5432<br/>Users, Scans, Subs")]
-            Redis[("Redis 7<br/>:6379<br/>Cache, Rate Limits")]
+            PG[("PostgreSQL 16<br/>:5432<br/>Users, Scans, Subs,<br/>Aggregates, Domains")]
+            Redis[("Redis 7<br/>:6379<br/>Cache, Rate Limits,<br/>Live Analytics")]
         end
     end
 
@@ -48,6 +50,7 @@ graph TB
     Proxy -->|HS256 JWT| FastAPI
 
     FastAPI --> Scanner
+    FastAPI --> Aggregation
     FastAPI --> StripeService
     FastAPI --> RateLimiter
 
@@ -56,6 +59,8 @@ graph TB
 
     FastAPI --> PG
     FastAPI --> Redis
+    Aggregation --> PG
+    Aggregation --> Redis
     RateLimiter --> Redis
 
     style Nginx fill:#1a1a2e,color:#ff6600,stroke:#ff6600
@@ -137,6 +142,11 @@ sequenceDiagram
         RL->>U: 429 Too Many Requests
     end
 
+    F->>R: Check cache for URL
+    alt Cache hit
+        R->>U: Cached scan result
+    end
+
     F->>S: scan_url(url)
     S->>S: validate_url()
     Note right of S: Block private IPs,<br/>localhost, metadata,<br/>non-HTTP schemes
@@ -156,7 +166,44 @@ sequenceDiagram
 
     S->>DB: INSERT scan record
     S->>R: INCR scan_count:{user_id}
+    S->>R: Cache result (TTL)
     S->>U: {ai_probability, verdict, analysis, signals}
+```
+
+---
+
+## Data Aggregation Flow
+
+```mermaid
+sequenceDiagram
+    participant T as Trigger<br/>(API / Cron)
+    participant A as Aggregation Service
+    participant DB as PostgreSQL
+    participant R as Redis
+
+    T->>A: run_full_aggregation()
+
+    Note over A,DB: Step 1: Daily Rollups
+    A->>DB: SELECT scans GROUP BY date, verdict
+    DB->>A: Raw scan data
+    A->>DB: UPSERT scan_aggregates
+
+    Note over A,DB: Step 2: Domain Stats
+    A->>DB: SELECT all scan URLs
+    A->>A: Parse URLs -> extract domains<br/>Strip www. prefix
+    A->>DB: UPSERT domain_stats
+
+    Note over A,R: Step 3: Dead Internet Index
+    A->>A: research_score = (bot*0.4 + ai_content*0.4 + ai_articles*0.2)
+    A->>DB: SELECT AVG(ai_probability) WHERE verdict=ai_generated
+    A->>A: DII = research*0.7 + live_scans*0.3<br/>(requires 10+ scans for blending)
+
+    Note over A,R: Step 4: Cache Results
+    A->>A: Generate scan summary
+    A->>A: Generate dynamic ticker facts
+    A->>A: Compute volume trends + top domains
+    A->>R: SET stats:live {analytics JSON}
+    A->>R: SET stats:global {blended stats}
 ```
 
 ---
@@ -176,6 +223,7 @@ sequenceDiagram
     N->>F: POST /api/v1/users/checkout?price_id=...
     F->>F: Validate price_id in [hunter, operator]
     F->>S: stripe.checkout.Session.create()
+    Note right of F: With idempotency key
     S->>F: {url: checkout_url}
     F->>N: {checkout_url}
     N->>U: Redirect -> Stripe Checkout
@@ -188,6 +236,7 @@ sequenceDiagram
     S->>F: POST /api/v1/webhooks/stripe
     Note right of S: checkout.session.completed
     F->>F: Verify webhook signature
+    F->>F: Check Redis dedup (48h TTL)
     F->>S: Retrieve subscription details
     S->>F: {price_id, status}
     F->>DB: UPDATE user SET tier = 'hunter'
@@ -219,15 +268,18 @@ erDiagram
     }
 
     SCAN {
-        int id PK "Auto-increment"
+        string id PK "UUID"
         string user_id FK "-> USER.id"
-        string url "Scanned URL"
+        string url "Scanned URL (max 2000)"
         float ai_probability "0.0 - 1.0"
         string verdict "human|mixed|ai_generated"
-        string analysis "Claude's explanation"
-        json signals "Array of detected patterns"
-        string content_snippet "First 500 chars"
+        text analysis "Claude's explanation"
+        text content_snippet "First 500 chars"
+        string model_used "Claude model version"
+        int tokens_used "API tokens consumed"
+        int scan_duration_ms "Processing time"
         datetime created_at
+        datetime updated_at
     }
 
     SUBSCRIPTION {
@@ -241,8 +293,33 @@ erDiagram
         datetime updated_at
     }
 
+    SCAN_AGGREGATE {
+        int id PK "Auto-increment"
+        date date "Aggregation date"
+        string verdict "human|mixed|ai_generated"
+        int scan_count "Total scans for day+verdict"
+        float avg_ai_probability "Average AI probability"
+        float min_ai_probability "Minimum AI probability"
+        float max_ai_probability "Maximum AI probability"
+        int total_tokens_used "Sum of tokens"
+        int avg_scan_duration_ms "Average scan time"
+    }
+
+    DOMAIN_STATS {
+        int id PK "Auto-increment"
+        string domain UK "Normalized, www-stripped"
+        int scan_count "Total scans"
+        int ai_generated_count "AI verdict count"
+        int mixed_count "Mixed verdict count"
+        int human_count "Human verdict count"
+        float avg_ai_probability "Average AI probability"
+        datetime last_scanned "Most recent scan"
+    }
+
     USER ||--o{ SCAN : "performs"
     USER ||--o| SUBSCRIPTION : "has"
+    SCAN }o--|| SCAN_AGGREGATE : "rolled up into"
+    SCAN }o--|| DOMAIN_STATS : "aggregated into"
 ```
 
 ---
@@ -262,6 +339,7 @@ graph LR
     subgraph Protected["Protected Routes (middleware)"]
         DB["/dashboard"] -->|Stats| Dashboard
         HI["/dashboard/history"] -->|Hunter+| History
+        AN["/dashboard/analytics"] -->|Hunter+| Analytics
         SU["/dashboard/success"] -->|Post-checkout| Success
     end
 
@@ -285,6 +363,22 @@ graph LR
 
 ---
 
+## Middleware Stack
+
+Middleware executes in reverse order of registration (last added = first executed):
+
+```
+Request → RequestLoggingMiddleware → IPRateLimitMiddleware → CORS → FastAPI Router → Response
+```
+
+| Middleware | Purpose |
+|-----------|---------|
+| `RequestLoggingMiddleware` | Logs method, path, status, duration; adds `X-Request-Duration-Ms` header |
+| `IPRateLimitMiddleware` | Per-IP rate limiting (60 req/min) via Redis sliding window |
+| `CORSMiddleware` | Cross-origin request handling |
+
+---
+
 ## Security Stack
 
 ```mermaid
@@ -298,7 +392,7 @@ graph TB
         OAuth2["OAuth 2.0<br/>Google + GitHub"]
         JWE["JWE Tokens<br/>(NextAuth)"]
         HS256["HS256 JWT<br/>(Backend)"]
-        Internal["X-Internal-Secret<br/>(/users/sync)"]
+        Internal["X-Internal-Secret<br/>(/users/sync, /stats/aggregate)"]
     end
 
     subgraph Validation["Validation"]
@@ -344,13 +438,20 @@ graph TB
     end
 
     subgraph Dashboard["Dashboard Components"]
-        Gauge["DeadIndexGauge<br/>SVG circular gauge"]
+        Gauge["DeadIndexGauge<br/>SVG gauge + pulse glow<br/>Responsive + ARIA"]
         StatCard["StatCard<br/>Animated metric"]
-        Timeline["TimelineChart<br/>Recharts area"]
+        Timeline["TimelineChart<br/>Recharts area<br/>Projected dot markers"]
         Platform["PlatformBreakdown<br/>Horizontal bars"]
-        LiveScan["LiveScanner<br/>URL input + results"]
-        Ticker["TickerTape<br/>Scrolling news"]
+        LiveScan["LiveScanner<br/>URL input + Cmd+K<br/>Progress + ARIA"]
+        Ticker["TickerTape<br/>Scrolling news<br/>role=marquee + sr-only"]
         Upgrade["UpgradeBanner<br/>CTA for Ghost users"]
+    end
+
+    subgraph Pages["Dashboard Pages"]
+        DashPage["Dashboard<br/>Main stats view<br/>Refresh + skip-to-content"]
+        HistoryPage["History<br/>Search + filter + sort<br/>useMemo filtering"]
+        AnalyticsPage["Analytics<br/>Personal + global stats<br/>Domain rankings + charts"]
+        SuccessPage["Success<br/>Post-checkout<br/>Countdown + animations"]
     end
 
     subgraph Landing["Landing Components"]
@@ -364,6 +465,12 @@ graph TB
         ErrorBound["ErrorBoundary<br/>Catch render errors<br/>Retry button"]
     end
 
+    subgraph Lib["Shared Libraries"]
+        APIClient["api-client.ts<br/>Type-safe fetch wrapper<br/>Analytics + domains + volume"]
+        Verdict["verdict.ts<br/>Shared color/label helpers"]
+        Constants["constants.ts<br/>Tier definitions + feature gates"]
+    end
+
     RootLayout --> Header
     RootLayout --> Footer
     RootLayout --> MobileNav
@@ -371,8 +478,10 @@ graph TB
 
     style Layout fill:#111,color:#e0e0e0,stroke:#333
     style Dashboard fill:#111,color:#ff6600,stroke:#ff6600
+    style Pages fill:#111,color:#ff4444,stroke:#ff4444
     style Landing fill:#111,color:#00cc66,stroke:#00cc66
     style UI fill:#111,color:#ffaa00,stroke:#ffaa00
+    style Lib fill:#111,color:#d4a574,stroke:#d4a574
 ```
 
 ---
@@ -399,12 +508,14 @@ graph LR
         REDIS["REDIS_URL<br/>default: redis://redis:6379"]
         DEBUG["DEBUG<br/>default: false"]
         CORS["CORS_ORIGINS"]
+        RATE["IP_RATE_LIMIT / IP_RATE_WINDOW"]
+        CACHE["SCAN_CACHE_TTL / STATS_CACHE_TTL"]
     end
 
     JWT -->|Backend| FastAPI
     JWT -->|Frontend| Proxy["API Proxy route"]
     INTERNAL -->|Frontend| AuthTS["auth.ts"]
-    INTERNAL -->|Backend| UsersSync["/users/sync"]
+    INTERNAL -->|Backend| UsersSync["/users/sync<br/>/stats/aggregate"]
 
     style Required fill:#1a1a1a,color:#ff4444,stroke:#ff4444
     style Optional fill:#1a1a1a,color:#ffaa00,stroke:#ffaa00
