@@ -17,9 +17,9 @@ Complete guide to deploy deadinternet.report on a VPS with SSL and custom domain
 
 ---
 
-## 2. DNS Setup (GoDaddy)
+## 2. DNS Setup
 
-In your GoDaddy DNS management:
+In your DNS provider's management panel:
 
 | Type | Name | Value | TTL |
 |------|------|-------|-----|
@@ -70,23 +70,69 @@ cp .env.example .env
 nano .env
 ```
 
+### Generate required secrets
+
+These are **mandatory** — the application will refuse to start without them:
+
+```bash
+# Generate and paste into .env
+openssl rand -base64 32   # → NEXTAUTH_SECRET
+openssl rand -hex 32      # → JWT_SECRET
+openssl rand -hex 32      # → INTERNAL_API_SECRET
+```
+
 ### Critical .env values for production
 
 ```env
-# Generate a real secret
-NEXTAUTH_SECRET=$(openssl rand -base64 32)
+# ---- Secrets (REQUIRED - app crashes without these) ----
+NEXTAUTH_SECRET=<paste-base64-output-here>
+JWT_SECRET=<paste-hex-output-here>
+INTERNAL_API_SECRET=<paste-hex-output-here>
 
-# Production URLs
+# ---- Production URLs ----
 NEXTAUTH_URL=https://deadinternet.report
 NEXT_PUBLIC_API_URL=https://deadinternet.report
 
-# Strong DB password
-POSTGRES_PASSWORD=USE_A_STRONG_PASSWORD_HERE
+# ---- Database ----
+POSTGRES_PASSWORD=<generate-a-strong-password>
 
-# Disable debug in prod
+# ---- Redis ----
+REDIS_PASSWORD=<generate-a-strong-password>
+
+# ---- Security ----
 DEBUG=false
 
-# Fill in all API keys...
+# ---- OAuth (get from provider dashboards) ----
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+GITHUB_CLIENT_ID=...
+GITHUB_CLIENT_SECRET=...
+
+# ---- Stripe ----
+STRIPE_SECRET_KEY=sk_live_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+STRIPE_PRICE_HUNTER=price_...
+STRIPE_PRICE_OPERATOR=price_...
+
+# ---- Anthropic ----
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+### Optional tuning (defaults are sensible)
+
+```env
+# IP rate limiting (application layer, on top of nginx 30r/s)
+IP_RATE_LIMIT=60           # max requests per window
+IP_RATE_WINDOW=60          # window in seconds
+
+# Cache TTLs
+STATS_CACHE_TTL=3600       # dashboard stats cache (1 hour)
+SCAN_CACHE_TTL=86400       # scan result cache (24 hours)
+
+# Scan rate limits per tier (per day)
+SCAN_RATE_FREE=0
+SCAN_RATE_HUNTER=10
+SCAN_RATE_OPERATOR=1000
 ```
 
 ### Launch
@@ -94,12 +140,29 @@ DEBUG=false
 ```bash
 docker compose up -d
 
-# Check all services are running
+# Check all 5 services are running
 docker compose ps
+
+# Expected output:
+#  NAME          STATUS          PORTS
+#  backend       Up (healthy)
+#  db            Up (healthy)    5432/tcp
+#  frontend      Up              3000/tcp
+#  nginx         Up              0.0.0.0:80->80/tcp, 0.0.0.0:443->443/tcp
+#  redis         Up (healthy)    6379/tcp
 
 # Check logs
 docker compose logs -f
 ```
+
+### Run database migrations
+
+```bash
+# Apply all Alembic migrations (creates tables, indexes, constraints)
+docker compose exec backend alembic upgrade head
+```
+
+> **Note:** If `DEBUG=true`, tables are auto-created on startup via `Base.metadata.create_all()`. In production (`DEBUG=false`), use Alembic migrations for proper schema management.
 
 ---
 
@@ -117,7 +180,8 @@ apt install -y certbot
 # Get certificate
 certbot certonly --standalone -d deadinternet.report -d www.deadinternet.report
 
-# Copy certs
+# Create certs directory and copy
+mkdir -p nginx/certs
 cp /etc/letsencrypt/live/deadinternet.report/fullchain.pem nginx/certs/
 cp /etc/letsencrypt/live/deadinternet.report/privkey.pem nginx/certs/
 ```
@@ -258,21 +322,94 @@ Caddy handles SSL automatically via Let's Encrypt.
 
 ---
 
-## 6. Post-Deploy Checklist
+## 6. Configure Stripe Webhooks
 
-- [ ] `curl https://deadinternet.report/health` returns `{"status":"alive"}`
-- [ ] Landing page loads with stats
-- [ ] Google/GitHub login works
-- [ ] Dashboard loads after login
-- [ ] Scanner works (Hunter tier)
-- [ ] Stripe checkout redirects correctly
-- [ ] Webhook endpoint configured in Stripe Dashboard
-- [ ] SSL certificate valid (check with browser)
-- [ ] DNS propagated (both @ and www)
+In the [Stripe Dashboard](https://dashboard.stripe.com/webhooks):
+
+1. Click **Add endpoint**
+2. Set URL: `https://deadinternet.report/api/v1/webhooks/stripe`
+3. Select events:
+   - `checkout.session.completed`
+   - `customer.subscription.updated`
+   - `customer.subscription.deleted`
+4. Copy the signing secret → paste as `STRIPE_WEBHOOK_SECRET` in `.env`
+5. Restart: `docker compose restart backend`
+
+### Test with Stripe CLI (local development)
+
+```bash
+stripe listen --forward-to localhost:8000/api/v1/webhooks/stripe
+# Copy the webhook signing secret it shows
+stripe trigger checkout.session.completed
+```
 
 ---
 
-## 7. Maintenance
+## 7. Configure OAuth Callbacks
+
+### Google
+
+In [Google Cloud Console](https://console.cloud.google.com/apis/credentials):
+
+- **Authorized redirect URIs:** `https://deadinternet.report/api/auth/callback/google`
+
+### GitHub
+
+In [GitHub Developer Settings](https://github.com/settings/developers):
+
+- **Authorization callback URL:** `https://deadinternet.report/api/auth/callback/github`
+
+---
+
+## 8. Data Aggregation
+
+The aggregation pipeline computes the Dead Internet Index, domain statistics, and dynamic ticker facts from scan data. Trigger it manually or set up a cron job:
+
+### Manual trigger
+
+```bash
+curl -X POST https://deadinternet.report/api/v1/stats/aggregate \
+  -H "X-Internal-Secret: YOUR_INTERNAL_API_SECRET"
+```
+
+### Automated (cron)
+
+```bash
+crontab -e
+# Run aggregation every hour
+0 * * * * curl -s -X POST http://localhost:8000/api/v1/stats/aggregate -H "X-Internal-Secret: $(grep INTERNAL_API_SECRET /path/to/deadinternet.report/.env | cut -d= -f2)" > /dev/null
+```
+
+The pipeline:
+1. Computes daily scan aggregates → `scan_aggregates` table
+2. Computes per-domain statistics → `domain_stats` table
+3. Calculates the dynamic Dead Internet Index (research 70% + live scans 30%)
+4. Generates dynamic ticker facts from scan data
+5. Caches results in Redis (`stats:global`, `stats:live`)
+
+---
+
+## 9. Post-Deploy Checklist
+
+- [ ] `curl https://deadinternet.report/health` returns `{"status":"healthy","database":"ok","redis":"ok"}`
+- [ ] Landing page loads with stats and ticker tape
+- [ ] Google login works (check callback URL in Google Console)
+- [ ] GitHub login works (check callback URL in GitHub Settings)
+- [ ] Dashboard loads after login with Dead Internet Index gauge
+- [ ] Scanner works for Hunter tier (scan a URL, check results)
+- [ ] Scan history page loads with search/filter/sort
+- [ ] Analytics page loads with personal metrics
+- [ ] Stripe checkout redirects correctly
+- [ ] Stripe webhook endpoint configured and verified
+- [ ] SSL certificate valid (check with browser padlock)
+- [ ] DNS propagated (both `@` and `www`)
+- [ ] `DEBUG=false` in production `.env`
+- [ ] Strong passwords set for `POSTGRES_PASSWORD` and `REDIS_PASSWORD`
+- [ ] Database migrations applied: `docker compose exec backend alembic upgrade head`
+
+---
+
+## 10. Maintenance
 
 ### Update to latest version
 
@@ -281,12 +418,19 @@ cd deadinternet.report
 git pull
 docker compose build
 docker compose up -d
+
+# Run any new migrations
+docker compose exec backend alembic upgrade head
 ```
 
 ### Backup database
 
 ```bash
+# Full dump
 docker compose exec db pg_dump -U deadinet deadinternet > backup_$(date +%Y%m%d).sql
+
+# Compressed
+docker compose exec db pg_dump -U deadinet deadinternet | gzip > backup_$(date +%Y%m%d).sql.gz
 ```
 
 ### Restore database
@@ -298,20 +442,58 @@ cat backup_20260208.sql | docker compose exec -T db psql -U deadinet deadinterne
 ### Monitor resources
 
 ```bash
+# Container resource usage
 docker stats
+
+# Recent backend logs
 docker compose logs --tail=100 backend
+
+# Request logging output (method, path, status, duration)
+docker compose logs --tail=50 backend | grep -E "(GET|POST|PUT|DELETE)"
+
+# Check database pool health
+docker compose exec backend python -c "from app.core.database import engine; print(engine.pool.status())"
+```
+
+### View structured request logs
+
+The `RequestLoggingMiddleware` logs every request with method, path, status code, and duration. Responses also include an `X-Request-Duration-Ms` header. Health check requests (`/health`, `/favicon.ico`) are excluded to reduce noise.
+
+```bash
+# Example log output:
+# INFO  GET /api/v1/stats/ 200 12ms
+# WARN  GET /api/v1/users/me 401 2ms
+# ERROR POST /api/v1/scanner/scan 502 15234ms
 ```
 
 ---
 
-## 8. Troubleshooting
+## 11. Troubleshooting
 
 | Issue | Solution |
 |-------|----------|
+| App crashes on startup | Check `JWT_SECRET` and `INTERNAL_API_SECRET` are set and not weak values |
 | Frontend can't reach backend | Check `API_URL=http://backend:8000` in docker-compose |
-| Auth callback fails | Verify `NEXTAUTH_URL` matches your domain exactly |
+| Auth callback fails | Verify `NEXTAUTH_URL` matches your domain exactly (including https) |
+| GitHub login broken | Ensure `.env` uses `GITHUB_CLIENT_ID` (not `GITHUB_ID`) |
 | Scanner returns 502 | Check `ANTHROPIC_API_KEY` is set and valid |
-| Stripe webhook fails | Verify `STRIPE_WEBHOOK_SECRET` and endpoint URL |
-| DB tables not created | Check logs: `docker compose logs backend` |
+| Stripe webhook fails | Verify `STRIPE_WEBHOOK_SECRET` and endpoint URL in Stripe Dashboard |
+| DB tables not created | Run migrations: `docker compose exec backend alembic upgrade head` |
 | CSS broken / unstyled | Rebuild frontend: `docker compose build frontend` |
 | Redis connection refused | Check Redis is healthy: `docker compose ps redis` |
+| Redis auth error | Verify `REDIS_PASSWORD` in `.env` matches docker-compose default |
+| Rate limited unexpectedly | Check `IP_RATE_LIMIT` (default 60/min) and nginx zone (30r/s) |
+| Stale dashboard stats | Trigger aggregation or check `STATS_CACHE_TTL` (default 1h) |
+| Analytics page empty | Run the aggregation pipeline (see section 8) |
+| Scan results not updating | Check `SCAN_CACHE_TTL` (default 24h) — same URL returns cached result |
+| 503 on /health | Database or Redis is down — check: `docker compose ps` |
+
+---
+
+## 12. Architecture Reference
+
+For detailed architecture diagrams, auth flow, data model, and component tree, see **[ARCHITECTURE.md](ARCHITECTURE.md)**.
+
+For API endpoint documentation with request/response examples, see **[API.md](API.md)**.
+
+For the security audit report and remediation status, see **[Security.md](Security.md)**.
