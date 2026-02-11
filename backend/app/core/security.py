@@ -4,9 +4,10 @@ We don't issue tokens here - NextAuth handles that.
 We only verify them to protect API endpoints.
 """
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
+import secrets as _secrets
 
 from app.core.config import settings
 
@@ -81,3 +82,23 @@ def require_tier(min_tier: str):
         return user
 
     return check_tier
+
+
+async def require_internal(
+    x_internal_secret: str | None = Header(None),
+) -> dict:
+    """
+    Dependency: requires X-Internal-Secret header.
+    Used for server-to-server calls (cron jobs, aggregation triggers).
+    """
+    if not x_internal_secret:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing internal auth",
+        )
+    if not _secrets.compare_digest(x_internal_secret, settings.internal_api_secret):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid internal auth",
+        )
+    return {"internal": True}

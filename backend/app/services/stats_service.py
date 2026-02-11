@@ -1,20 +1,27 @@
 """
 Stats Service - aggregates and caches Dead Internet metrics.
 
-Data sources are from published research reports.
-Stats are cached in Redis and refreshed periodically.
-The seed data comes from scripts/seed_data.py.
+Blends two data sources:
+  1. Research data — published studies (static, authoritative)
+  2. Live scan data — user scan results (dynamic, real-time)
+
+The Dead Internet Index dynamically combines both sources
+using a weighted formula. Stats are cached in Redis.
 """
 
 import json
+import logging
+from datetime import date
+
 from app.core.redis import redis_client
 from app.core.config import settings
 
-# Hardcoded sourced data - updated from research reports
-# This is the canonical dataset, also loadable from scripts/seed_data.py
-STATIC_STATS = {
-    "dead_internet_index": 0.67,  # Composite score 0-1
-    "last_updated": "2026-02-08",
+logger = logging.getLogger(__name__)
+
+# ── Research data (from published reports) ────────────────────────────
+# This is the canonical dataset of curated statistics.
+# Updated manually when new research reports are published.
+RESEARCH_DATA = {
     "global": {
         "bot_traffic_pct": 51.0,
         "ai_content_new_pages_pct": 74.2,
@@ -84,25 +91,94 @@ STATIC_STATS = {
     ],
 }
 
+# Legacy alias for backward compatibility
+STATIC_STATS = {
+    **RESEARCH_DATA,
+    "dead_internet_index": 0.67,
+    "last_updated": "2026-02-08",
+}
+
 
 class StatsService:
-    """Serves cached statistics."""
+    """Serves cached statistics, blending research and live scan data."""
 
     CACHE_KEY = "stats:global"
+    LIVE_CACHE_KEY = "stats:live"
 
     async def get_stats(self) -> dict:
-        """Get stats from cache or fall back to static data."""
+        """
+        Get the full stats payload.
+        Tries enriched cache first, then falls back to static data.
+        """
         cached = await redis_client.get_cached(self.CACHE_KEY)
         if cached:
             return json.loads(cached)
 
         # Cache miss: use static data and cache it
+        stats = self._build_static_stats()
         await redis_client.set_cached(
             self.CACHE_KEY,
-            json.dumps(STATIC_STATS),
+            json.dumps(stats),
             ttl=settings.stats_cache_ttl,
         )
-        return STATIC_STATS
+        return stats
+
+    async def get_live_stats(self) -> dict | None:
+        """Get the live scan analytics from cache (if available)."""
+        cached = await redis_client.get_cached(self.LIVE_CACHE_KEY)
+        if cached:
+            return json.loads(cached)
+        return None
+
+    async def update_with_live_data(self, live_data: dict):
+        """
+        Merge live aggregation data into the stats cache.
+        Called by the aggregation pipeline after computing analytics.
+        """
+        stats = self._build_static_stats()
+
+        # Override Dead Internet Index with dynamically calculated value
+        if "dead_internet_index" in live_data:
+            stats["dead_internet_index"] = live_data["dead_internet_index"]
+
+        # Add scan analytics section
+        if "scan_summary" in live_data:
+            stats["scan_analytics"] = live_data["scan_summary"]
+
+        # Append dynamic ticker facts to research facts
+        if "dynamic_ticker_facts" in live_data:
+            all_facts = stats["ticker_facts"] + live_data["dynamic_ticker_facts"]
+            stats["ticker_facts"] = all_facts
+
+        # Add scan volume trend
+        if "scan_volume_trend" in live_data:
+            stats["scan_volume_trend"] = live_data["scan_volume_trend"]
+
+        # Add top domains
+        if "top_domains" in live_data:
+            stats["top_domains"] = live_data["top_domains"]
+
+        stats["last_updated"] = date.today().isoformat()
+
+        # Cache the enriched stats
+        await redis_client.set_cached(
+            self.CACHE_KEY,
+            json.dumps(stats),
+            ttl=settings.stats_cache_ttl,
+        )
+
+        # Also cache live data separately (for the analytics endpoint)
+        await redis_client.set_cached(
+            self.LIVE_CACHE_KEY,
+            json.dumps(live_data),
+            ttl=settings.stats_cache_ttl,
+        )
+
+        logger.info(
+            "Updated stats cache with live data (DII=%.4f, scans=%d)",
+            live_data.get("dead_internet_index", 0),
+            live_data.get("scan_summary", {}).get("total_scans", 0),
+        )
 
     async def refresh_cache(self, new_data: dict):
         """Update cached stats (called by update script)."""
@@ -111,6 +187,18 @@ class StatsService:
             json.dumps(new_data),
             ttl=settings.stats_cache_ttl,
         )
+
+    def get_research_data(self) -> dict:
+        """Return the static research data (for aggregation service)."""
+        return RESEARCH_DATA
+
+    def _build_static_stats(self) -> dict:
+        """Build the base stats dict from research data."""
+        return {
+            **RESEARCH_DATA,
+            "dead_internet_index": 0.67,
+            "last_updated": "2026-02-08",
+        }
 
 
 stats_service = StatsService()
