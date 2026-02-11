@@ -18,6 +18,8 @@ services:
       - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
       - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
       - STRIPE_PUBLIC_KEY=${STRIPE_PUBLIC_KEY}
+      - JWT_SECRET=${JWT_SECRET:-${NEXTAUTH_SECRET}}
+      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
     depends_on:
       backend:
         condition: service_healthy
@@ -39,7 +41,8 @@ services:
       - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
       - STRIPE_PRICE_HUNTER=${STRIPE_PRICE_HUNTER}
       - STRIPE_PRICE_OPERATOR=${STRIPE_PRICE_OPERATOR}
-      - JWT_SECRET=${NEXTAUTH_SECRET}
+      - JWT_SECRET=${JWT_SECRET:-${NEXTAUTH_SECRET}}
+      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
       - CORS_ORIGINS=http://localhost:3000,https://deadinternet.report,http://frontend:3000
     depends_on:
       db:
