@@ -38,6 +38,9 @@ export default function HomePage() {
           <Link href="/pricing" className="text-dead-dim hover:text-dead-text font-mono text-sm transition-colors">
             Pricing
           </Link>
+          <Link href="/deploy" className="text-dead-dim hover:text-dead-text font-mono text-sm transition-colors hidden md:block">
+            Deploy
+          </Link>
           <Link
             href="/login"
             className="bg-dead-accent/10 border border-dead-accent text-dead-accent px-3 md:px-4 py-2 font-mono text-sm hover:bg-dead-accent/20 transition-colors"

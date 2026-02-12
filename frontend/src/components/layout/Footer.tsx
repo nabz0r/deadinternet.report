@@ -19,6 +19,9 @@ export default function Footer() {
           <Link href="/privacy" className="font-mono text-dead-muted text-xs hover:text-dead-accent transition-colors">
             Privacy
           </Link>
+          <Link href="/deploy" className="font-mono text-dead-muted text-xs hover:text-dead-accent transition-colors">
+            Deploy
+          </Link>
           <a
             href="https://github.com/nabz0r/deadinternet.report"
             className="font-mono text-dead-accent text-xs hover:underline"
