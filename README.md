@@ -159,6 +159,17 @@ Operator-tier users can also authenticate via **API tokens** (SHA-256 hashed, st
 - **Last used tracking** — `last_used_at` updated on each authenticated request
 - **Dual auth** — security module tries JWT first, falls back to API token lookup
 
+### Deployment Wizard (`/deploy`)
+- **Interactive 7-step guide** — prerequisites, DNS, server setup, configure, launch, SSL, verify
+- **Custom domain + VPS IP inputs** — auto-fills all commands, URLs, and config snippets
+- **Client-side secret generator** — generate all 5 required secrets in one click
+- **Download .env file** — pre-filled with generated secrets and domain
+- **Persistent progress** — completed steps survive page reloads via localStorage
+- **Keyboard navigation** — arrow keys to move between steps
+- **Collapsible troubleshooting** — per-step debugging guides
+- **Architecture flow diagram** — visual request routing through the stack
+- **Post-deploy checklist** — categorized 17-item interactive verification
+
 ### Accessibility
 - `prefers-reduced-motion` media query support
 - ARIA roles: `meter`, `progressbar`, `marquee`, `status`
@@ -426,6 +437,7 @@ POST /api/v1/stats/aggregate  → Trigger aggregation pipeline (X-Internal-Secre
 │       │   ├── page.tsx            # Landing (SSR)
 │       │   ├── login/              # Google/GitHub SSO
 │       │   ├── pricing/            # Tier comparison + SEO metadata
+│       │   ├── deploy/             # Interactive deployment wizard
 │       │   ├── dashboard/          # Main dashboard (lazy-loaded)
 │       │   │   ├── history/        # Scan history (Hunter+)
 │       │   │   ├── analytics/      # Personal + global analytics (Hunter+)
@@ -437,6 +449,7 @@ POST /api/v1/stats/aggregate  → Trigger aggregation pipeline (X-Internal-Secre
 │       │   ├── layout/             # Header, Footer, MobileNav
 │       │   ├── dashboard/          # Gauge, Charts, Scanner, etc.
 │       │   ├── landing/            # HeroCounter, LivePulse
+│       │   ├── deploy/             # DeployWizard (7-step interactive guide)
 │       │   └── ui/                 # Toast, Skeleton, ErrorBoundary
 │       ├── lib/
 │       │   ├── auth.ts             # NextAuth config

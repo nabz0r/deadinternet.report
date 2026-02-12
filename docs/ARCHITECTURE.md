@@ -345,6 +345,7 @@ graph LR
     subgraph Public["Public Routes"]
         LP["/"] -->|Landing| SSR["SSR - page.tsx"]
         PR["/pricing"] -->|Tiers| Client["Client component"]
+        DP["/deploy"] -->|Wizard| DeployWiz["Client - DeployWizard"]
         LG["/login"] -->|Auth| NextAuth
         TOS["/terms"] -->|Legal| SSR2["SSR"]
         PIV["/privacy"] -->|Legal| SSR3["SSR"]
@@ -477,6 +478,14 @@ graph TB
         LivePulse["LivePulse<br/>Pulsing green dot"]
     end
 
+    subgraph Deploy["Deploy Wizard"]
+        DeployWizard["DeployWizard<br/>7-step interactive guide<br/>localStorage persistence"]
+        SecretGen["SecretGenerator<br/>Client-side crypto<br/>Generate + Download .env"]
+        CodeBlock["CodeBlock<br/>Terminal UI + copy"]
+        Callout["Callout<br/>Warning / Tip / Info"]
+        Collapsible["Collapsible<br/>Troubleshooting sections"]
+    end
+
     subgraph UI["UI System"]
         Toast["Toast<br/>Context-based notifications<br/>Auto-dismiss 4s"]
         Skeleton["Skeleton<br/>Loading placeholders<br/>Card, Gauge, Chart, Table"]
@@ -498,6 +507,7 @@ graph TB
     style Dashboard fill:#111,color:#ff6600,stroke:#ff6600
     style Pages fill:#111,color:#ff4444,stroke:#ff4444
     style Landing fill:#111,color:#00cc66,stroke:#00cc66
+    style Deploy fill:#111,color:#ff6600,stroke:#ff6600
     style UI fill:#111,color:#ffaa00,stroke:#ffaa00
     style Lib fill:#111,color:#d4a574,stroke:#d4a574
 ```

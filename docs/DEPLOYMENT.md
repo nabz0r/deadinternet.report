@@ -2,6 +2,8 @@
 
 Complete guide to deploy deadinternet.report on a VPS with SSL and custom domain.
 
+> **Interactive wizard available:** Visit [`/deploy`](https://deadinternet.report/deploy) for a step-by-step interactive deployment wizard with auto-filled commands, client-side secret generation, .env download, persistent progress tracking, and a post-deploy checklist.
+
 ---
 
 ## 1. Choose a VPS
