@@ -5,7 +5,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![CI](https://img.shields.io/badge/CI-GitHub_Actions-2088FF.svg)](.github/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/Tests-75_passing-brightgreen.svg)](backend/tests/)
+[![Tests](https://img.shields.io/badge/Tests-100_passing-brightgreen.svg)](backend/tests/)
 [![Docker](https://img.shields.io/badge/Docker-ready-blue.svg)](https://www.docker.com/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.110-009688.svg)](https://fastapi.tiangolo.com/)
 [![Next.js](https://img.shields.io/badge/Next.js-14-black.svg)](https://nextjs.org/)
@@ -18,7 +18,7 @@
 
 A data-driven dashboard that aggregates **published research** about AI-generated content, bot traffic, and synthetic media across the internet. Not speculation — sourced numbers from Europol, Imperva/Thales, Ahrefs, Cloudflare, and more.
 
-Premium tiers include a **live URL scanner** powered by Claude AI that estimates how likely a page's content was AI-generated, plus **personal analytics** with domain insights and scan trends.
+Premium tiers include a **live URL scanner** powered by Claude AI that estimates how likely a page's content was AI-generated, plus **personal analytics** with domain insights and scan trends. Operator tier includes **API token access** for programmatic use and **bulk URL scanning**.
 
 ### Key findings
 
@@ -90,6 +90,8 @@ Browser → NextAuth (JWE token) → Next.js API Proxy → re-sign as HS256 JWT 
 
 The proxy at `/api/backend/[...path]` handles this transparently. The shared secret is `JWT_SECRET` (not NEXTAUTH_SECRET — they are separate keys since the security audit fix).
 
+Operator-tier users can also authenticate via **API tokens** (SHA-256 hashed, stored in `api_tokens` table). The security module tries JWT first, then falls back to API token lookup.
+
 ### Tech stack
 
 | Layer | Technology | Role |
@@ -126,6 +128,7 @@ The proxy at `/api/backend/[...path]` handles this transparently. The shared sec
 - **Progress bar** with ARIA attributes and loading states
 - **Scan caching** — identical URLs return cached results (configurable TTL)
 - **Verdict display** with shared color/label helpers
+- **Bulk scanning** — analyze up to 10 URLs concurrently (Operator tier, via API or API tokens)
 
 ### Scan History (Hunter+)
 - **Search** by URL
@@ -148,6 +151,14 @@ The proxy at `/api/backend/[...path]` handles this transparently. The shared sec
 - **Volume trends** — daily scan volume for charting
 - **Dynamic ticker facts** — auto-generated from scan data
 
+### API Token Access (Operator)
+- **Programmatic access** — create up to 5 API tokens per account
+- **SHA-256 hashed** — raw token shown once at creation, stored as hash
+- **Token prefix** — first 8 chars stored for identification (`dir_xxxx...`)
+- **Revocable** — tokens can be revoked individually
+- **Last used tracking** — `last_used_at` updated on each authenticated request
+- **Dual auth** — security module tries JWT first, falls back to API token lookup
+
 ### Accessibility
 - `prefers-reduced-motion` media query support
 - ARIA roles: `meter`, `progressbar`, `marquee`, `status`
@@ -160,7 +171,7 @@ The proxy at `/api/backend/[...path]` handles this transparently. The shared sec
 
 ## Testing
 
-The backend has a comprehensive test suite (75 tests) covering security, API, rate limiting, scanner logic, aggregation, and user analytics. Tests use async SQLite and FakeRedis — no external services required.
+The backend has a comprehensive test suite (100 tests) covering security, API, rate limiting, scanner logic, aggregation, user analytics, API tokens, and bulk scanning. Tests use async SQLite and FakeRedis — no external services required.
 
 ```bash
 cd backend
@@ -176,8 +187,11 @@ JWT_SECRET=test-secret INTERNAL_API_SECRET=test-secret python -m pytest tests/ -
 | `test_scanner_service.py` | 24 | SSRF protection (IP ranges, DNS), prompt injection filtering |
 | `test_stats_api.py` | 5 | Public stats endpoints, Redis caching |
 | `test_rate_limiter.py` | 5 | Per-tier scan limits, ghost tier blocking |
+| `test_request_logging.py` | 5 | Duration header, health check skip, 404/401 coverage |
 | `test_aggregation.py` | 26 | Daily aggregates, domain stats, DII calculation, ticker generation, full pipeline, API endpoints, stats blending |
 | `test_user_analytics.py` | 7 | User analytics endpoint, domain grouping, monthly counts, user isolation, recent activity |
+| `test_api_tokens.py` | 11 | Token CRUD, tier gating, name validation, revocation, max limit |
+| `test_batch_scan.py` | 7 | Batch validation, tier gating, success, partial failure |
 
 ### CI/CD
 
@@ -215,6 +229,7 @@ Additionally fixed: proxy path whitelist (E4), CSP headers (E5), JWT_SECRET sepa
 - **Stripe idempotency** — checkout sessions use idempotency keys; webhooks deduplicated via Redis (48h TTL)
 - **Webhook error handling** — internal errors logged, never exposed to Stripe
 - **Request logging** — structured middleware logging method, path, status, and duration for every request (skips health checks)
+- **API tokens** — SHA-256 hashed before storage; raw token shown only once at creation; max 5 active tokens per user; revocable; Operator tier only
 
 ---
 
@@ -229,6 +244,7 @@ Additionally fixed: proxy path whitelist (E4), CSP headers (E5), JWT_SECRET sepa
 | `subscriptions` | user_id (FK CASCADE, unique), stripe_subscription_id, status, tier | `CHECK status IN (active, canceled, past_due, trialing, incomplete, incomplete_expired)` |
 | `scan_aggregates` | date, verdict, scan_count, avg/min/max ai_probability, tokens, duration | Unique on `(date, verdict)` |
 | `domain_stats` | domain (unique), scan_count, verdict counts, avg_ai_probability | www-stripped domain normalization |
+| `api_tokens` | user_id (FK CASCADE), name, token_hash (unique), token_prefix, revoked | SHA-256 hashed, max 5 per user |
 
 ### Indexes
 
@@ -237,6 +253,7 @@ Additionally fixed: proxy path whitelist (E4), CSP headers (E5), JWT_SECRET sepa
 - `subscriptions.user_id` (unique), `subscriptions.stripe_subscription_id` (unique), `subscriptions.stripe_price_id`
 - `scan_aggregates(date, verdict)` unique composite
 - `domain_stats.domain` unique
+- `api_tokens.user_id`, `api_tokens.token_hash` (unique)
 
 ### Connection pool
 
@@ -246,7 +263,7 @@ Additionally fixed: proxy path whitelist (E4), CSP headers (E5), JWT_SECRET sepa
 
 ### Cascade behavior
 
-Deleting a user automatically deletes all associated scans and subscription records, both at the ORM level (`cascade="all, delete-orphan"`) and at the database level (`ON DELETE CASCADE`).
+Deleting a user automatically deletes all associated scans, subscription records, and API tokens, both at the ORM level (`cascade="all, delete-orphan"`) and at the database level (`ON DELETE CASCADE`).
 
 ### Migrations
 
@@ -256,6 +273,7 @@ Alembic manages schema migrations:
 |-----------|-------------|
 | `001_initial_schema` | Users, scans, subscriptions tables with indexes and constraints |
 | `002_add_aggregation_tables` | scan_aggregates and domain_stats tables for data aggregation |
+| `003_add_api_tokens_table` | api_tokens table for Operator-tier programmatic access |
 
 ```bash
 # Apply migrations
@@ -351,6 +369,14 @@ GET  /api/v1/scanner/history  → Scan history (paginated, validated)
 GET  /api/v1/users/me/analytics → Personal scan analytics
 ```
 
+### Operator tier (supports API tokens)
+```
+POST /api/v1/scanner/batch    → Batch scan up to 10 URLs concurrently
+POST /api/v1/users/tokens     → Create API token (max 5 per user)
+GET  /api/v1/users/tokens     → List API tokens
+DELETE /api/v1/users/tokens/{id} → Revoke API token
+```
+
 ### User management
 ```
 GET  /api/v1/users/me         → Profile
@@ -422,22 +448,26 @@ POST /api/v1/stats/aggregate  → Trigger aggregation pipeline (X-Internal-Secre
 │           └── next-auth.d.ts      # NextAuth type augmentation
 │
 ├── backend/                    # FastAPI
-│   ├── tests/                  # pytest test suite (75 tests)
+│   ├── tests/                  # pytest test suite (100 tests)
 │   │   ├── conftest.py             # Async fixtures, FakeRedis
 │   │   ├── test_security.py        # JWT, auth, tier enforcement
 │   │   ├── test_scanner_service.py # SSRF, prompt injection
 │   │   ├── test_stats_api.py       # Stats endpoints
 │   │   ├── test_rate_limiter.py    # Scan rate limits
+│   │   ├── test_request_logging.py # Request logging middleware
 │   │   ├── test_aggregation.py     # Aggregation pipeline, DII, domains
-│   │   └── test_user_analytics.py  # User analytics endpoint
+│   │   ├── test_user_analytics.py  # User analytics endpoint
+│   │   ├── test_api_tokens.py      # API token CRUD, tier gating, limits
+│   │   └── test_batch_scan.py      # Bulk scan endpoint
 │   ├── alembic/
 │   │   └── versions/
 │   │       ├── 001_initial_schema.py       # Initial migration
-│   │       └── 002_add_aggregation_tables.py  # Aggregation tables
+│   │       ├── 002_add_aggregation_tables.py  # Aggregation tables
+│   │       └── 003_add_api_tokens_table.py    # API tokens table
 │   └── app/
 │       ├── core/
 │       │   ├── config.py           # Settings + secret validation
-│       │   ├── security.py         # JWT decode + auth + internal auth
+│       │   ├── security.py         # JWT + API token auth + internal auth
 │       │   ├── database.py         # Async SQLAlchemy + pool config
 │       │   ├── redis.py            # Redis client wrapper
 │       │   └── rate_limiter.py     # Per-user scan limits
@@ -448,6 +478,7 @@ POST /api/v1/stats/aggregate  → Trigger aggregation pipeline (X-Internal-Secre
 │       │   ├── user.py             # User model
 │       │   ├── scan.py             # Scan model
 │       │   ├── subscription.py     # Subscription model
+│       │   ├── api_token.py        # API token model (SHA-256 hashed)
 │       │   └── aggregation.py      # ScanAggregate + DomainStats models
 │       ├── schemas/
 │       │   └── user.py             # Pydantic schemas (profile, analytics)
@@ -458,8 +489,8 @@ POST /api/v1/stats/aggregate  → Trigger aggregation pipeline (X-Internal-Secre
 │       │   └── stripe_service.py   # Checkout + idempotent webhooks
 │       └── api/v1/
 │           ├── stats.py            # Public + analytics endpoints
-│           ├── scanner.py          # Auth + rate limited + validated
-│           ├── users.py            # Sync + billing + user analytics
+│           ├── scanner.py          # Scan + batch scan (rate limited)
+│           ├── users.py            # Sync + billing + analytics + tokens
 │           └── webhooks.py         # Stripe receiver (deduped)
 │
 ├── nginx/                      # Reverse proxy (HTTPS + security headers)

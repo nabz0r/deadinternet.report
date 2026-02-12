@@ -389,7 +389,48 @@ The pipeline:
 
 ---
 
-## 9. Post-Deploy Checklist
+## 9. API Token Management (Operator Tier)
+
+Operator-tier users can create API tokens for programmatic access (CI/CD, scripts, integrations). Tokens work with the batch scanning endpoint and all authenticated endpoints.
+
+### Create a token
+
+```bash
+curl -X POST https://deadinternet.report/api/v1/users/tokens \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "CI Pipeline"}'
+```
+
+Response includes the raw token (**shown only once**):
+```json
+{
+  "id": "token-uuid",
+  "name": "CI Pipeline",
+  "token": "dir_a1b2c3d4...",
+  "token_prefix": "dir_a1b2",
+  "created_at": "2026-02-12T10:00:00Z"
+}
+```
+
+### Use the token for batch scanning
+
+```bash
+curl -X POST https://deadinternet.report/api/v1/scanner/batch \
+  -H "Authorization: Bearer dir_a1b2c3d4..." \
+  -H "Content-Type: application/json" \
+  -d '{"urls": ["https://example.com", "https://test.org"]}'
+```
+
+### Token limits
+- Maximum **5 active tokens** per user
+- Tokens are stored as **SHA-256 hashes** (raw value never stored)
+- Tokens can be **revoked** individually via `DELETE /api/v1/users/tokens/{id}`
+- `last_used_at` is tracked automatically
+
+---
+
+## 10. Post-Deploy Checklist
 
 - [ ] `curl https://deadinternet.report/health` returns `{"status":"healthy","database":"ok","redis":"ok"}`
 - [ ] Landing page loads with stats and ticker tape
@@ -406,10 +447,12 @@ The pipeline:
 - [ ] `DEBUG=false` in production `.env`
 - [ ] Strong passwords set for `POSTGRES_PASSWORD` and `REDIS_PASSWORD`
 - [ ] Database migrations applied: `docker compose exec backend alembic upgrade head`
+- [ ] API tokens work for Operator tier (create, list, revoke)
+- [ ] Batch scanning endpoint works: `POST /api/v1/scanner/batch`
 
 ---
 
-## 10. Maintenance
+## 11. Maintenance
 
 ### Update to latest version
 
@@ -468,7 +511,7 @@ The `RequestLoggingMiddleware` logs every request with method, path, status code
 
 ---
 
-## 11. Troubleshooting
+## 12. Troubleshooting
 
 | Issue | Solution |
 |-------|----------|
@@ -487,10 +530,13 @@ The `RequestLoggingMiddleware` logs every request with method, path, status code
 | Analytics page empty | Run the aggregation pipeline (see section 8) |
 | Scan results not updating | Check `SCAN_CACHE_TTL` (default 24h) — same URL returns cached result |
 | 503 on /health | Database or Redis is down — check: `docker compose ps` |
+| API token rejected | Check token not revoked, user still Operator tier |
+| Batch scan 429 | Not enough remaining daily scans — check tier limit (1000/day for Operator) |
+| Token creation fails | Max 5 active tokens — revoke unused ones first |
 
 ---
 
-## 12. Architecture Reference
+## 13. Architecture Reference
 
 For detailed architecture diagrams, auth flow, data model, and component tree, see **[ARCHITECTURE.md](ARCHITECTURE.md)**.
 

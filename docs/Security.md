@@ -1,7 +1,7 @@
 # Security Audit — deadinternet.report
 
 **Date:** February 8, 2026
-**Last updated:** February 11, 2026
+**Last updated:** February 12, 2026
 **Scope:** Full codebase (Next.js frontend, FastAPI backend, Docker infrastructure)
 **Methodology:** Static code review (manual SAST), architecture analysis, OWASP Top 10
 
@@ -16,7 +16,7 @@ All 7 critical vulnerabilities were fixed on February 9, 2026.
 |----------|-------|-------|---------|
 | Critical | 7 | **7** | 0 |
 | High | 9 | **6** | 3 |
-| Medium | 11 | **1** | 10 |
+| Medium | 11 | **2** | 9 |
 | Low | 8 | **1** | 7 |
 
 ---
@@ -190,7 +190,7 @@ async def verify_internal_secret(
 | # | Description | File |
 |---|-------------|------|
 | M1 | No Referer validation on Stripe webhook | webhooks.py |
-| M2 | GITHUB_ID vs GITHUB_CLIENT_ID inconsistency | docker-compose.yml |
+| M2 | ~~GITHUB_ID vs GITHUB_CLIENT_ID inconsistency~~ | ~~docker-compose.yml~~ **FIXED** — `.env.example` and docker-compose now use `GITHUB_CLIENT_ID` consistently |
 | M3 | echo=debug exposes SQL in logs | database.py |
 | M4 | No POST body size limit | FastAPI config |
 | M5 | Redis without password | docker-compose.yml |
@@ -228,6 +228,7 @@ async def verify_internal_secret(
 | `0dd4ee1` | 2026-02-09 | Proxy: JWT_SECRET, path whitelist, success redirect |
 | latest | 2026-02-09 | E2, E6, E7, E8: IP rate limiting, create_all conditional, User-Agent, Claude timeout |
 | latest | 2026-02-11 | M10: Structured request logging middleware, F1: TypeScript types for all API responses |
+| latest | 2026-02-12 | M2: GITHUB_CLIENT_ID fix, API token auth (SHA-256 hashed, Operator-only, max 5 per user) |
 
 ---
 

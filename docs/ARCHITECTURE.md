@@ -26,15 +26,16 @@ graph TB
 
         subgraph Backend["Backend Container"]
             FastAPI["FastAPI<br/>:8000<br/>Async Python"]
-            Scanner["Scanner Service<br/>SSRF Protection<br/>Prompt Sanitization"]
+            Scanner["Scanner Service<br/>SSRF Protection<br/>Prompt Sanitization<br/>Batch + Single"]
             Aggregation["Aggregation Service<br/>DII Calculation<br/>Domain Analytics"]
             StripeService["Stripe Service<br/>Checkout + Webhooks"]
             RateLimiter["Rate Limiter<br/>Per-user daily limits"]
+            TokenAuth["API Token Auth<br/>SHA-256 hashed<br/>Dual auth (JWT + token)"]
             ReqLogger["Request Logger<br/>Structured logging"]
         end
 
         subgraph Data["Data Layer"]
-            PG[("PostgreSQL 16<br/>:5432<br/>Users, Scans, Subs,<br/>Aggregates, Domains")]
+            PG[("PostgreSQL 16<br/>:5432<br/>Users, Scans, Subs,<br/>Aggregates, Domains, Tokens")]
             Redis[("Redis 7<br/>:6379<br/>Cache, Rate Limits,<br/>Live Analytics")]
         end
     end
@@ -53,6 +54,7 @@ graph TB
     FastAPI --> Aggregation
     FastAPI --> StripeService
     FastAPI --> RateLimiter
+    FastAPI --> TokenAuth
 
     Scanner -->|Fetch + Analyze| Claude
     StripeService -->|Webhooks| Stripe
@@ -316,8 +318,20 @@ erDiagram
         datetime last_scanned "Most recent scan"
     }
 
+    API_TOKEN {
+        string id PK "UUID"
+        string user_id FK "-> USER.id"
+        string name "User-provided label"
+        string token_hash UK "SHA-256 hex"
+        string token_prefix "First 8 chars"
+        boolean revoked "Soft delete"
+        datetime last_used_at "Nullable"
+        datetime created_at
+    }
+
     USER ||--o{ SCAN : "performs"
     USER ||--o| SUBSCRIPTION : "has"
+    USER ||--o{ API_TOKEN : "owns"
     SCAN }o--|| SCAN_AGGREGATE : "rolled up into"
     SCAN }o--|| DOMAIN_STATS : "aggregated into"
 ```
@@ -350,8 +364,10 @@ graph LR
 
     subgraph Backend["FastAPI Endpoints"]
         ST["/api/v1/stats/*"] -->|Public| Stats
-        SC["/api/v1/scanner/*"] -->|Auth + Rate limit| Scanner
+        SC["/api/v1/scanner/scan"] -->|Hunter+ JWT| Scanner
+        BA["/api/v1/scanner/batch"] -->|Operator JWT/Token| BatchScan
         US["/api/v1/users/*"] -->|Auth / Internal| Users
+        TK["/api/v1/users/tokens"] -->|Operator| Tokens
         WH["/api/v1/webhooks/stripe"] -->|Stripe signature| Webhooks
     end
 
@@ -392,6 +408,7 @@ graph TB
         OAuth2["OAuth 2.0<br/>Google + GitHub"]
         JWE["JWE Tokens<br/>(NextAuth)"]
         HS256["HS256 JWT<br/>(Backend)"]
+        ApiToken["API Tokens<br/>SHA-256 hashed<br/>(Operator tier)"]
         Internal["X-Internal-Secret<br/>(/users/sync, /stats/aggregate)"]
     end
 
@@ -412,7 +429,8 @@ graph TB
     NGINX --> CSP
     CSP --> OAuth2
     OAuth2 --> JWE --> HS256
-    HS256 --> Internal
+    HS256 --> ApiToken
+    ApiToken --> Internal
     Internal --> SSRF
     SSRF --> Prompt --> JSONVal
     PathWL --> PriceVal
@@ -466,7 +484,7 @@ graph TB
     end
 
     subgraph Lib["Shared Libraries"]
-        APIClient["api-client.ts<br/>Type-safe fetch wrapper<br/>Analytics + domains + volume"]
+        APIClient["api-client.ts<br/>Type-safe fetch wrapper<br/>Analytics + tokens + batch"]
         Verdict["verdict.ts<br/>Shared color/label helpers"]
         Constants["constants.ts<br/>Tier definitions + feature gates"]
     end

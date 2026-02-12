@@ -8,17 +8,28 @@
 
 ## Authentication
 
-Public endpoints require no authentication. Protected endpoints require a Bearer JWT token in the `Authorization` header.
+Public endpoints require no authentication. Protected endpoints require a Bearer token in the `Authorization` header.
+
+### Browser-based (JWT)
 
 In the browser, authentication is handled automatically through the Next.js API proxy (`/api/backend/...`), which extracts the NextAuth session and re-signs it as an HS256 JWT.
 
-For direct API access (Operator tier), use the token from your profile:
+### API Tokens (Operator tier)
+
+Operator-tier users can create API tokens for programmatic access. API tokens work with the same `Authorization: Bearer` header and are accepted on all authenticated endpoints plus batch scanning.
 
 ```bash
-curl -H "Authorization: Bearer YOUR_JWT_TOKEN" \
-  https://deadinternet.report/api/v1/scanner/scan \
-  -d '{"url": "https://example.com"}'
+# Create a token via the dashboard or API
+# Token format: dir_<64 hex chars>
+
+# Use the token for API calls
+curl -H "Authorization: Bearer dir_abc123..." \
+  https://deadinternet.report/api/v1/scanner/batch \
+  -H "Content-Type: application/json" \
+  -d '{"urls": ["https://example.com", "https://test.com"]}'
 ```
+
+The backend tries JWT decoding first. If that fails, it falls back to API token lookup (SHA-256 hash comparison).
 
 ---
 
@@ -287,6 +298,129 @@ Paginated scan history.
   "offset": 0
 }
 ```
+
+### POST /scanner/batch (Operator required, supports API tokens)
+
+Batch-analyze up to 10 URLs concurrently. Each URL counts toward the daily scan limit. URLs are processed with a concurrency limit of 3.
+
+**Request:**
+```json
+{
+  "urls": [
+    "https://example.com/article-1",
+    "https://example.com/article-2",
+    "https://blog.test/post"
+  ]
+}
+```
+
+**Response:**
+```json
+{
+  "total": 3,
+  "succeeded": 2,
+  "failed": 1,
+  "results": [
+    {
+      "url": "https://example.com/article-1",
+      "status": "success",
+      "result": {
+        "id": "a1b2c3d4-...",
+        "url": "https://example.com/article-1",
+        "ai_probability": 0.85,
+        "verdict": "ai_generated",
+        "analysis": "Highly formulaic structure...",
+        "content_snippet": "In today's...",
+        "model_used": "claude-sonnet-4-5-20250929",
+        "scan_duration_ms": 2100,
+        "created_at": "2026-02-12T10:00:00Z"
+      },
+      "error": null
+    },
+    {
+      "url": "https://blog.test/post",
+      "status": "error",
+      "result": null,
+      "error": "Cannot resolve hostname: blog.test"
+    }
+  ],
+  "usage": {
+    "used": 15,
+    "limit": 1000,
+    "remaining": 985
+  }
+}
+```
+
+**Errors:**
+- `403` — Requires Operator tier
+- `422` — Empty list, >10 URLs, or invalid URL format
+- `429` — Not enough remaining daily scans for the full batch
+
+---
+
+## API Token Endpoints (Operator required)
+
+### POST /users/tokens
+
+Create a new API token. Maximum 5 active (non-revoked) tokens per user. The raw token is returned **only once** at creation.
+
+**Request:**
+```json
+{
+  "name": "CI Pipeline"
+}
+```
+
+**Response:**
+```json
+{
+  "id": "token-uuid",
+  "name": "CI Pipeline",
+  "token": "dir_a1b2c3d4e5f6...",
+  "token_prefix": "dir_a1b2",
+  "created_at": "2026-02-12T10:00:00Z"
+}
+```
+
+**Errors:**
+- `400` — Maximum 5 active tokens reached
+- `403` — Requires Operator tier
+- `422` — Name empty or >100 characters
+
+### GET /users/tokens
+
+List all API tokens for the current user (including revoked). The raw token value is **never** returned in list responses.
+
+**Response:**
+```json
+[
+  {
+    "id": "token-uuid",
+    "name": "CI Pipeline",
+    "token_prefix": "dir_a1b2",
+    "revoked": false,
+    "last_used_at": "2026-02-12T09:15:00Z",
+    "created_at": "2026-02-11T10:00:00Z"
+  }
+]
+```
+
+### DELETE /users/tokens/{token_id}
+
+Revoke an API token. Revoked tokens cannot be used for authentication.
+
+**Response:**
+```json
+{
+  "id": "token-uuid",
+  "revoked": true
+}
+```
+
+**Errors:**
+- `400` — Token already revoked
+- `404` — Token not found (or belongs to another user)
 
 ---
 
