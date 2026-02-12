@@ -1,22 +1,27 @@
 """
-User endpoints - profile and subscription management.
+User endpoints - profile, subscription, and API token management.
 
-GET  /api/v1/users/me         -> Current user profile
-POST /api/v1/users/sync       -> Sync user from NextAuth (internal only)
-POST /api/v1/users/checkout   -> Create Stripe checkout session
-POST /api/v1/users/portal     -> Create Stripe billing portal
+GET  /api/v1/users/me             -> Current user profile
+GET  /api/v1/users/me/analytics   -> Personal analytics
+POST /api/v1/users/sync           -> Sync user from NextAuth (internal only)
+POST /api/v1/users/checkout       -> Create Stripe checkout session
+POST /api/v1/users/portal         -> Create Stripe billing portal
+POST /api/v1/users/tokens         -> Create API token (Operator only)
+GET  /api/v1/users/tokens         -> List API tokens (Operator only)
+DELETE /api/v1/users/tokens/{id}  -> Revoke API token (Operator only)
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Header
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.database import get_db
-from app.core.security import require_auth
+from app.core.security import require_auth, require_tier, hash_token
 from app.core.config import settings
 from app.models.user import User
 from app.models.scan import Scan
+from app.models.api_token import ApiToken
 from app.services.stripe_service import stripe_service
 from app.schemas.user import UserProfile, UserAnalyticsResponse, VerdictBreakdown, DomainAnalytics, DailyActivity
 
@@ -255,3 +260,118 @@ async def create_portal(
         return_url=f"{base_url}/dashboard",
     )
     return {"portal_url": session.url}
+
+
+# ── API Token Management (Operator tier only) ────────────────────────
+
+MAX_TOKENS_PER_USER = 5
+
+
+class CreateTokenRequest(BaseModel):
+    """POST /api/v1/users/tokens"""
+    name: str = Field(..., min_length=1, max_length=100, description="Label for this token")
+
+
+class TokenResponse(BaseModel):
+    """API token info (returned when listing tokens)."""
+    id: str
+    name: str
+    token_prefix: str
+    revoked: bool
+    last_used_at: datetime | None = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class TokenCreatedResponse(BaseModel):
+    """Returned only on creation — includes the raw token (shown once)."""
+    id: str
+    name: str
+    token: str
+    token_prefix: str
+    created_at: datetime
+
+
+@router.post("/tokens", response_model=TokenCreatedResponse)
+async def create_api_token(
+    payload: CreateTokenRequest,
+    user: dict = Depends(require_tier("operator")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a new API token. Operator tier only. Max 5 per user."""
+    # Check existing token count
+    result = await db.execute(
+        select(ApiToken).where(
+            ApiToken.user_id == user["id"],
+            ApiToken.revoked == False,  # noqa: E712
+        )
+    )
+    existing = result.scalars().all()
+    if len(existing) >= MAX_TOKENS_PER_USER:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Maximum {MAX_TOKENS_PER_USER} active tokens allowed",
+        )
+
+    # Generate token: dir_ prefix + 32 random bytes hex
+    raw_token = f"dir_{secrets.token_hex(32)}"
+    token_hashed = hash_token(raw_token)
+
+    api_token = ApiToken(
+        user_id=user["id"],
+        name=payload.name,
+        token_hash=token_hashed,
+        token_prefix=raw_token[:8],
+    )
+    db.add(api_token)
+    await db.flush()
+
+    return TokenCreatedResponse(
+        id=api_token.id,
+        name=api_token.name,
+        token=raw_token,
+        token_prefix=api_token.token_prefix,
+        created_at=api_token.created_at,
+    )
+
+
+@router.get("/tokens", response_model=list[TokenResponse])
+async def list_api_tokens(
+    user: dict = Depends(require_tier("operator")),
+    db: AsyncSession = Depends(get_db),
+):
+    """List all API tokens for the current user. Operator tier only."""
+    result = await db.execute(
+        select(ApiToken)
+        .where(ApiToken.user_id == user["id"])
+        .order_by(ApiToken.created_at.desc())
+    )
+    tokens = result.scalars().all()
+    return [TokenResponse.model_validate(t) for t in tokens]
+
+
+@router.delete("/tokens/{token_id}")
+async def revoke_api_token(
+    token_id: str,
+    user: dict = Depends(require_tier("operator")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Revoke an API token. Operator tier only."""
+    result = await db.execute(
+        select(ApiToken).where(
+            ApiToken.id == token_id,
+            ApiToken.user_id == user["id"],
+        )
+    )
+    api_token = result.scalar_one_or_none()
+    if not api_token:
+        raise HTTPException(status_code=404, detail="Token not found")
+
+    if api_token.revoked:
+        raise HTTPException(status_code=400, detail="Token already revoked")
+
+    api_token.revoked = True
+    await db.flush()
+    return {"id": token_id, "revoked": True}

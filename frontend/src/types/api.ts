@@ -139,3 +139,39 @@ export interface UserAnalytics {
   top_domains: DomainStatsItem[]
   recent_activity: ScanVolumeEntry[]
 }
+
+// ── API Token types ─────────────────────────────────────────────────
+
+export interface ApiToken {
+  id: string
+  name: string
+  token_prefix: string
+  revoked: boolean
+  last_used_at: string | null
+  created_at: string
+}
+
+export interface ApiTokenCreated {
+  id: string
+  name: string
+  token: string
+  token_prefix: string
+  created_at: string
+}
+
+// ── Batch Scan types ────────────────────────────────────────────────
+
+export interface BatchScanResultItem {
+  url: string
+  status: 'success' | 'error'
+  result: ScanResult | null
+  error: string | null
+}
+
+export interface BatchScanResponse {
+  total: number
+  succeeded: number
+  failed: number
+  results: BatchScanResultItem[]
+  usage: ScanUsage
+}

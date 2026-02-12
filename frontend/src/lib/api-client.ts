@@ -19,6 +19,9 @@ import type {
   DomainStatsItem,
   ScanVolumeEntry,
   UserAnalytics,
+  ApiToken,
+  ApiTokenCreated,
+  BatchScanResponse,
 } from '@/types/api'
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
@@ -126,6 +129,33 @@ class ApiClient {
 
   async getUserAnalytics() {
     return this.authRequest<UserAnalytics>('/users/me/analytics')
+  }
+
+  // --- API Tokens (auth, proxied, Operator only) ---
+  async createApiToken(name: string) {
+    return this.authRequest<ApiTokenCreated>('/users/tokens', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    })
+  }
+
+  async listApiTokens() {
+    return this.authRequest<ApiToken[]>('/users/tokens')
+  }
+
+  async revokeApiToken(tokenId: string) {
+    return this.authRequest<{ id: string; revoked: boolean }>(
+      `/users/tokens/${tokenId}`,
+      { method: 'DELETE' }
+    )
+  }
+
+  // --- Batch Scanning (auth, proxied, Operator only) ---
+  async batchScan(urls: string[]) {
+    return this.authRequest<BatchScanResponse>('/scanner/batch', {
+      method: 'POST',
+      body: JSON.stringify({ urls }),
+    })
   }
 }
 
